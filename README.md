@@ -10,7 +10,7 @@ python3 -m venv .venv
 ./run.sh
 ```
 
-Panel: `http://ADRES_VPN_MASZYNY:10000`. Domyślnie nasłuchuje na adresie IPv4 interfejsu Tailscale (`tailscale0`); bez VPN używa `127.0.0.1:10000`. Na obecnej maszynie adres panelu to http://ADRES_VPN_MASZYNY:10000. `HOST` i `PORT` pozwalają ustawić konkretny interfejs i port przy docelowym wdrożeniu. Login `ADMIN`; wygenerowane hasło znajduje się w `dsecret/admin-password.txt`. Hasło nie jest wyświetlane w logach. Weryfikacja używa scrypt; sesje wygasają po 8 godzinach i po restarcie serwera. Zmiany w API wymagają tokenu CSRF. Osiem nieudanych prób logowania blokuje kolejne próby na 5 minut dla danego adresu.
+Panel: `http://ADRES_VPN_MASZYNY:10000`. Domyślnie nasłuchuje na adresie IPv4 interfejsu Tailscale (`tailscale0`); bez VPN używa `127.0.0.1:10000`. `HOST` i `PORT` pozwalają ustawić konkretny interfejs i port przy docelowym wdrożeniu. Login `ADMIN`; wygenerowane hasło znajduje się w `dsecret/admin-password.txt`. Hasło nie jest wyświetlane w logach. Weryfikacja używa scrypt; sesje wygasają po 8 godzinach i po restarcie serwera. Zmiany w API wymagają tokenu CSRF. Osiem nieudanych prób logowania blokuje kolejne próby na 5 minut dla danego adresu.
 
 Pierwszy start może pobrać modele rozpoznawania z Internetu. Dostęp do `/dev/video*` wymaga uprawnień systemowych. Zamknij inne programy korzystające z kamer. Usługa ponawia połączenie po utracie obrazu. Adresy IP muszą być dostępne z serwera. Obsługiwane są strumienie RTSP/RTSPS i HTTP/HTTPS obsługiwane przez OpenCV/FFmpeg; wykrywanie kamer IP przez ONVIF nie jest zaimplementowane — adres wpisuje administrator.
 
@@ -67,7 +67,7 @@ python3 scripts/pull_events.py --url https://ADRES_MASZYNY_KAMER --key-file secr
 
 Baza odbiorcy zawiera `camera_events`, `camera_parking`, `sync_cursors`. Pierwsze uruchomienie odtwarza parking z historii, następne pobierają nowe zdarzenia od zapisanego ID. Zapis zdarzeń i kursora jest atomowy; ponowne pobranie nie duplikuje rekordów. `--interval 0` wykonuje jeden odczyt maksymalnie 1000 zdarzeń. Długotrwałe odpytywanie dogania większą historię kolejnymi partiami. Zmiana adresu źródła tworzy osobny strumień w bazie odbiorcy. Zmiana klucza wymaga podmiany pliku na obu maszynach i restartu panelu.
 
-Adres maszyny docelowej nie został jeszcze podany. Aktualny panel nasłuchuje na adresie VPN na porcie 10000. Na obecnej maszynie można testować odbiornik z `--url http://ADRES_VPN_MASZYNY:10000`. Dostęp z drugiej maszyny wymaga osiągalności adresu VPN i zezwolenia na TCP/10000; do przesyłania klucza przez sieć użyj HTTPS albo zabezpieczonego tunelu.
+Adres maszyny docelowej nie został jeszcze podany. Aktualny panel nasłuchuje na adresie VPN na porcie 10000. Odbiornik konfiguruje się przez `--url http://ADRES_VPN_MASZYNY:10000`. Dostęp z drugiej maszyny wymaga osiągalności adresu VPN i zezwolenia na TCP/10000; do przesyłania klucza przez sieć użyj HTTPS albo zabezpieczonego tunelu.
 
 ## Wyniki sprawdzenia na obecnej maszynie
 

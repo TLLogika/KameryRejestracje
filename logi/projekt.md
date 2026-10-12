@@ -28,7 +28,7 @@ Użytkownik potwierdził brak kamer IP na teraz i komunikację baz przez IP ze w
 
 - 7 testów automatycznych zakończonych powodzeniem.
 - Przeglądarka Chromium: logowanie, dodanie dwóch konfiguracji USB, działający podgląd jednej dostępnej kamery, edycja/zapis/usunięcie obszaru, rozwijany panel serwera, widok mobilny, wylogowanie.
-- Rzeczywisty FastALPR na publicznym obrazie referencyjnym: poprawny odczyt `TABLICA_TESTOWA`.
+- Rzeczywisty FastALPR na publicznym obrazie referencyjnym: odczyt zgodny z tablicą na obrazie referencyjnym.
 - Dwa równoczesne lokalne strumienie MJPEG w izolowanej bazie: OCR obu kamer, potwierdzony wjazd bez duplikacji, przełączenie stref na wyjazd, potwierdzony wyjazd.
 - API integracji sprawdzone lokalnie rzeczywistym odbiornikiem; chronione API bez sesji/klucza zwraca 401.
 - Wspólny kontroler obu fizycznych kamer USB odrzuca drugi strumień z `VIDIOC_STREAMON: No space left on device`. Potwierdzono niezależnie od OpenCV przy użyciu v4l2-ctl. Próby MJPEG i YUYV przy niższej rozdzielczości i FPS nie usunęły ograniczenia. Wymagane rozdzielenie kontrolerów USB / poprawa przekazywania USB w wirtualizatorze.
