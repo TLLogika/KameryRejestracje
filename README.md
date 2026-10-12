@@ -144,3 +144,24 @@ Adres maszyny docelowej nie został jeszcze podany. Aktualny panel nasłuchuje n
 Testy automatyczne przechodzą. Test przeglądarkowy potwierdził logowanie, dodawanie USB, dostępny obraz, rysowanie i zapis stref, panel serwera i układ mobilny. Rozpoznawanie przetestowano na obrazie referencyjnym FastALPR oraz na dwóch jednoczesnych lokalnych strumieniach MJPEG: potwierdzony wjazd, deduplikacja i wyjazd. Lokalny odbiornik połączył się z API przez klucz.
 
 **Obecne dwie kamery USB nie dostarczają obrazu równocześnie na wspólnym kontrolerze.** Sterownik zgłasza `VIDIOC_STREAMON: No space left on device` także przy 320×240/5 FPS i 640×480/5 FPS. To brak zasobów kontrolera USB, nie brak miejsca na dysku. Każda kamera osobno dostarcza obraz. Należy rozdzielić kamery między kontrolery USB albo poprawić konfigurację przekazywania USB do maszyny wirtualnej. Nie zmieniano modułów jądra ani konfiguracji wirtualizatora.
+
+### Próba z dwoma nagraniami zamiast USB
+
+Panel może tymczasowo zastąpić dwie skonfigurowane kamery USB lokalnymi nagraniami „Car Park” i „Parking Garage” z [UVG-VCM, Ultra Video Group / Tampere University](https://ultravideo.fi/UVG-VCM/index.html). Zbiór jest udostępniany na licencji CC BY 4.0; autorzy proszą o cytowanie: T. Partanen et al., “UVG-VCM: Benchmarking dataset for machine-oriented visual data compression”, QoMEX 2026. Kopie robocze przekonwertowano z podglądów MP4 4K/60 FPS do 1080p/15 FPS. Pliki pozostają w ignorowanym katalogu `data/test-videos/` i nie są wysyłane do GitHub.
+
+Przygotowanie pobiera tylko dwie małe wersje MP4 (łącznie około 195 MB), bez surowych plików YUV. Wymaga `ffmpeg` na maszynie. Następnie włącz podmianę:
+
+```bash
+python3 scripts/prepare_test_videos.py
+python3 scripts/set_test_videos.py
+./docker.sh up -d --force-recreate --wait
+```
+
+Oba nagrania działają równocześnie w pętli; tytuły podglądów zawierają „TEST” i nazwę filmu. OCR i obszary działają, ale odczyty z nagrań nie zapisują zdarzeń w bazie parkingu. Konfiguracja źródeł USB, ich ustawienia i zaznaczenia pozostają zachowane. Wyłączenie próby:
+
+```bash
+python3 scripts/set_test_videos.py --off
+./docker.sh up -d --force-recreate --wait
+```
+
+Przywraca to fizyczne kamery USB. Plik podmiany `dsecret/test-cameras.json` jest prywatny i nie trafia do obrazu Docker ani repozytorium.

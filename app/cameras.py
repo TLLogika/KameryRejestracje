@@ -10,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from .recognition import Consensus, zone_at
+from .test_video import load_test_sources
 from .video_settings import DEFAULT_SETTINGS, MIN_ROTATION_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class UsbTurns:
 class Worker:
     def __init__(self, config, manager):
         self.config, self.manager = config, manager
+        self.test_video = getattr(manager,'test_sources',{}).get(config['id'])
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.frame = self.jpeg = None
@@ -112,6 +114,8 @@ class Worker:
             now=time.monotonic()
             return {key:self.config[key] for key in ('id','name','kind','zones')} | {
                 'status':self.status,'detections':list(self.detections),
+                'test_mode':bool(getattr(self,'test_video',None)),
+                **({'name':self.config['name']+' — TEST: '+self.test_video['label'],'kind':'test'} if getattr(self,'test_video',None) else {}),
                 'settings':DEFAULT_SETTINGS | self.config.get('settings',{}),
                 'metrics':{'resolution':self.actual_resolution,'device_fps':self.device_fps,'format':self.device_format,
                     'capture_fps':self._rate(self.capture_times) if live else 0,
@@ -122,12 +126,12 @@ class Worker:
                     'frame_age':round(now-self.last_frame_at,1) if self.last_frame_at else None,
                     'turn_remaining':round(max(0,self.turn_deadline-now),1) if self.turn_deadline and live else None,
                     'minimum_seconds':minimum,'recommended_seconds':max(5,minimum),
-                    'rotation_enabled':self.manager.usb_rotation_seconds>0}}
+                    'rotation_enabled':self.config['kind']=='usb' and self.manager.usb_rotation_seconds>0 and not getattr(self,'test_video',None)}}
 
     def capture(self):
         while not self.stop.is_set():
             cap = None
-            rotating = self.config['kind']=='usb' and self.manager.usb_rotation_seconds > 0
+            rotating = self.config['kind']=='usb' and self.manager.usb_rotation_seconds > 0 and not self.test_video
             if rotating:
                 self.status = 'Wstrzymana — ostatnia klatka' if self.jpeg else 'Czeka na turę USB'
                 if not self.manager.usb_turns.acquire(self.config['id'],self.stop):
@@ -146,8 +150,10 @@ class Worker:
             failed = False
             deadline = None
             try:
-                source = self.config['source']
-                if self.config['kind']=='usb':
+                source = self.test_video['source'] if self.test_video else self.config['source']
+                if self.test_video:
+                    cap = cv2.VideoCapture(source,cv2.CAP_FFMPEG)
+                elif self.config['kind']=='usb':
                     cap = cv2.VideoCapture(source,cv2.CAP_V4L2)
                     cap.set(cv2.CAP_PROP_FOURCC,cv2.VideoWriter_fourcc(*settings['format']))
                     cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
@@ -162,10 +168,19 @@ class Worker:
                     self.device_fps = cap.get(cv2.CAP_PROP_FPS) or None
                     code=int(cap.get(cv2.CAP_PROP_FOURCC))
                     self.device_format=''.join(chr((code>>(8*i))&255) for i in range(4)).strip('\x00') or None
+                video_tick=time.monotonic()
+                video_interval=1/max(1,min(60,self.device_fps or 15))
                 while not self.stop.is_set() and not self.reconfigure.is_set():
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     ok, frame = cap.read()
+                    if not ok and self.test_video:
+                        cap.set(cv2.CAP_PROP_POS_FRAMES,0)
+                        with self.lock:
+                            self.capture_epoch += 1
+                            self.consensus = Consensus()
+                        ok,frame=cap.read()
+                        video_tick=time.monotonic()
                     if not ok:
                         raise RuntimeError('Brak obrazu')
                     if rotating and deadline is None:
@@ -180,7 +195,12 @@ class Worker:
                         self.actual_resolution = {'width':frame.shape[1],'height':frame.shape[0]}
                         self.turn_deadline = deadline
                         self.status = 'Działa'
-                    self.stop.wait(.001 if self.config['kind']=='usb' else .07)
+                    if self.test_video:
+                        video_tick += video_interval
+                        self.stop.wait(max(0,video_tick-time.monotonic()))
+                        video_tick=max(video_tick,time.monotonic()-video_interval)
+                    else:
+                        self.stop.wait(.001 if self.config['kind']=='usb' else .07)
             except Exception:
                 failed = True
                 self.status = 'Brak obrazu — ponawiam'
@@ -209,6 +229,7 @@ class Manager:
         self.usb_rotation_seconds = float(os.environ.get('USB_ROTATION_SECONDS','0'))
         if not 0 <= self.usb_rotation_seconds <= 60:
             raise ValueError('USB_ROTATION_SECONDS musi być w zakresie 0–60')
+        self.test_sources=load_test_sources(os.environ.get('TEST_CAMERA_SOURCES_FILE',''))
         self.usb_turns = UsbTurns()
         self.ocr_status = 'Ładowanie modeli'
         self.config_lock = threading.RLock()
@@ -297,7 +318,8 @@ class Manager:
                         worker.ocr_times.append(inference_end)
                         worker.detections = boxes
                     for plate,zone,confidence in worker.consensus.frame(reads):
-                        self.store.transition(plate,zone,key,confidence)
+                        if not worker.test_video:
+                            self.store.transition(plate,zone,key,confidence)
                 except Exception:
                     logger.exception('Błąd rozpoznawania kamery %s',key)
             self.stop.wait(.25)

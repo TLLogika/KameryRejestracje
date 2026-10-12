@@ -161,6 +161,8 @@ def camera_settings(camera_id: int,body: CameraSettingsInput):
     worker=app.state.manager.workers.get(camera_id)
     if worker is None:
         raise HTTPException(404,'Nie ma takiej kamery')
+    if getattr(worker,'test_video',None):
+        raise HTTPException(400,'Wyłącz nagranie testowe, aby zmienić parametry USB')
     if worker.config['kind']!='usb':
         raise HTTPException(400,'Parametry strumienia IP zmień w kamerze lub serwerze RTSP')
     current=DEFAULT_SETTINGS | worker.config.get('settings',{})

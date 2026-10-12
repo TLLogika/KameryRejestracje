@@ -12,6 +12,7 @@ services:
     ports:
       - "${PANEL_BIND_IP:-127.0.0.1}:${PANEL_PORT:-10000}:10000"
     environment:
+      TEST_CAMERA_SOURCES_FILE: /app/dsecret/test-cameras.json
       ALPR_CACHE_DIR: /app/data/model-cache
       USB_ROTATION_SECONDS: ${USB_ROTATION_SECONDS:-5}
     volumes:
