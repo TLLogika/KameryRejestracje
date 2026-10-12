@@ -6,5 +6,5 @@ dsecret/
 __pycache__/
 .pytest_cache/
 data/
-logi/*.log
+logi/*.log*
 *.sqlite*

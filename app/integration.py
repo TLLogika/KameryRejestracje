@@ -12,7 +12,8 @@ if not KEY_PATH.exists():
     fd=os.open(KEY_PATH,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
     with os.fdopen(fd,'w') as f:
         f.write(secrets.token_urlsafe(48)+'\n')
-os.chmod(KEY_PATH,0o600)
+if KEY_PATH.stat().st_mode & 0o777 != 0o600:
+    os.chmod(KEY_PATH,0o600)
 KEY = KEY_PATH.read_text().strip()
 if len(KEY)<32:
     raise RuntimeError('Klucz integracji musi mieć co najmniej 32 znaki')

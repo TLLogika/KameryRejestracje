@@ -1,0 +1,38 @@
+name: kamery-rejestracje
+services:
+  panel:
+    image: kamery-rejestracje:local
+    build:
+      context: .
+      args:
+        APP_UID: ${APP_UID:-1000}
+        APP_GID: ${APP_GID:-1000}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${PANEL_BIND_IP:-127.0.0.1}:${PANEL_PORT:-10000}:10000"
+    environment:
+      ALPR_CACHE_DIR: /app/data/model-cache
+    volumes:
+      - ./data:/app/data
+      - ./dsecret:/app/dsecret
+      - ./logi:/app/logi
+      - type: bind
+        source: ./secret/integration.key
+        target: /app/secret/integration.key
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 25s
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

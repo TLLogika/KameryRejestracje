@@ -1,0 +1,15 @@
+**
+!Dockerfile
+!requirements-docker.lock
+!app/
+!app/**
+!scripts/
+!scripts/pull_events.py
+**/__pycache__/
+**/*.pyc
+**/.env
+**/.env.*
+**/secret/**
+**/dsecret/**
+**/*.sqlite*
+**/*.log

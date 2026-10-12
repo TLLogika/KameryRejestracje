@@ -3,6 +3,7 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -117,6 +118,12 @@ class Manager:
     def recognize(self):
         try:
             from fast_alpr import ALPR
+            cache = os.environ.get('ALPR_CACHE_DIR')
+            if cache:
+                from open_image_models.detection.core import hub as detector_hub
+                from fast_plate_ocr.inference import hub as ocr_hub
+                detector_hub.MODEL_CACHE_DIR = Path(cache)/'open-image-models'
+                ocr_hub.MODEL_CACHE_DIR = Path(cache)/'fast-plate-ocr'
             import onnxruntime as ort
             options = ort.SessionOptions()
             options.intra_op_num_threads = 2

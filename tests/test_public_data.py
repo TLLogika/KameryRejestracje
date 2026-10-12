@@ -19,7 +19,7 @@ def test_public_files_do_not_expose_deployment_data():
     for name in filter(None,result.stdout.decode().split('\0')):
         path = Path(name)
         assert path.parts[0] not in PRIVATE_ARTIFACTS, f'Prywatny plik w repozytorium: {name}'
-        assert not name.endswith(('.sqlite3','.sqlite','.log')), f'Dane operacyjne w repozytorium: {name}'
+        assert not re.search(r'\.(?:sqlite3?|log)(?:[.-]|$)',name), f'Dane operacyjne w repozytorium: {name}'
         content = (ROOT/path).read_text()
         for candidate in IPV4.findall(content):
             try:
