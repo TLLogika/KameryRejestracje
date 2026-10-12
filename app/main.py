@@ -11,6 +11,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 from urllib.parse import urlparse
+from typing import Literal
 
 import psutil
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
@@ -19,6 +20,7 @@ from pydantic import BaseModel, Field
 from .integration import machine_auth
 from .store import Store
 from .cameras import Manager, usb_devices
+from .video_settings import usb_modes, DEFAULT_SETTINGS, MIN_ROTATION_SECONDS
 
 ROOT = Path(__file__).resolve().parent.parent
 PRIVATE = ROOT/'dsecret'
@@ -136,7 +138,43 @@ def add_camera(body: CameraInput):
 
 @app.get('/api/cameras',dependencies=[Depends(auth)])
 def cameras():
-    return [{'id':w.config['id'],'name':w.config['name'],'kind':w.config['kind'],'zones':w.config['zones'],'status':w.status,'detections':w.detections} for w in list(app.state.manager.workers.values())]
+    return [w.snapshot() for w in list(app.state.manager.workers.values())]
+
+class CameraSettingsInput(BaseModel):
+    rotation_seconds: int | None = Field(default=None,ge=MIN_ROTATION_SECONDS,le=120)
+    width: int | None = Field(default=None,ge=160,le=4096)
+    height: int | None = Field(default=None,ge=120,le=2160)
+    fps: float | None = Field(default=None,ge=1,le=60,allow_inf_nan=False)
+    format: Literal['MJPG','YUYV'] | None = None
+
+@app.get('/api/cameras/{camera_id}/capabilities',dependencies=[Depends(auth)])
+def capabilities(camera_id: int):
+    worker=app.state.manager.workers.get(camera_id)
+    if worker is None:
+        raise HTTPException(404,'Nie ma takiej kamery')
+    return {'kind':worker.config['kind'],
+            'modes':usb_modes(worker.config['source']) if worker.config['kind']=='usb' else [],
+            'minimum_seconds':worker.minimum_seconds()}
+
+@app.put('/api/cameras/{camera_id}/settings',dependencies=[Depends(auth)])
+def camera_settings(camera_id: int,body: CameraSettingsInput):
+    worker=app.state.manager.workers.get(camera_id)
+    if worker is None:
+        raise HTTPException(404,'Nie ma takiej kamery')
+    if worker.config['kind']!='usb':
+        raise HTTPException(400,'Parametry strumienia IP zmień w kamerze lub serwerze RTSP')
+    current=DEFAULT_SETTINGS | worker.config.get('settings',{})
+    settings=current | body.model_dump(exclude_none=True)
+    minimum=worker.minimum_seconds()
+    if settings['rotation_seconds']<minimum:
+        raise HTTPException(400,f'Minimalna tura przy obecnej szybkości analizy wynosi {minimum} s')
+    if any(settings[key]!=current[key] for key in ('width','height','fps','format')):
+        modes=usb_modes(worker.config['source'])
+        if not any(m['width']==settings['width'] and m['height']==settings['height'] and m['format']==settings['format'] and any(abs(f-settings['fps'])<.01 for f in m['fps']) for m in modes):
+            raise HTTPException(400,'Urządzenie nie zgłasza takiej kombinacji formatu, rozdzielczości i FPS')
+    store.settings(camera_id,settings)
+    app.state.manager.reload()
+    return {'ok':True,'settings':settings,'minimum_seconds':minimum}
 
 class Rect(BaseModel):
     x: float = Field(ge=0,le=1)

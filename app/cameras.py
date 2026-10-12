@@ -1,6 +1,7 @@
 import glob
 from collections import deque
 import logging
+import math
 import os
 import threading
 import time
@@ -9,6 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from .recognition import Consensus, zone_at
+from .video_settings import DEFAULT_SETTINGS, MIN_ROTATION_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -70,11 +72,57 @@ class Worker:
         self.frame = self.jpeg = None
         self.sequence = 0
         self.capture_epoch = 0
+        self.reconfigure = threading.Event()
+        self.capture_times = deque(maxlen=300)
+        self.ocr_times = deque(maxlen=120)
+        self.ocr_durations = deque(maxlen=60)
+        self.ocr_intervals = deque(maxlen=60)
+        self.last_ocr_at = None
+        self.last_frame_at = None
+        self.actual_resolution = None
+        self.device_fps = None
+        self.device_format = None
+        self.turn_deadline = None
         self.status = 'Łączenie'
         self.detections = []
         self.consensus = Consensus()
         self.thread = threading.Thread(target=self.capture,daemon=True,name=f"camera-{config['id']}")
         self.thread.start()
+
+    @staticmethod
+    def _rate(times):
+        if len(times)<2 or times[-1]<=times[0]:return None
+        cutoff=times[-1]-5
+        recent=[t for t in times if t>=cutoff]
+        return round((len(recent)-1)/(recent[-1]-recent[0]),1) if len(recent)>1 else None
+
+    def minimum_seconds(self):
+        with self.lock:
+            intervals=list(self.ocr_intervals)
+            durations=list(self.ocr_durations)
+        def p95(values):
+            return sorted(values)[max(0,math.ceil(.95*len(values))-1)] if values else 0
+        cycle=max(p95(intervals),p95(durations)+.25)
+        return max(MIN_ROTATION_SECONDS,math.ceil(4*cycle+.5))
+
+    def snapshot(self):
+        minimum=self.minimum_seconds()
+        with self.lock:
+            live=self.status=='Działa'
+            now=time.monotonic()
+            return {key:self.config[key] for key in ('id','name','kind','zones')} | {
+                'status':self.status,'detections':list(self.detections),
+                'settings':DEFAULT_SETTINGS | self.config.get('settings',{}),
+                'metrics':{'resolution':self.actual_resolution,'device_fps':self.device_fps,'format':self.device_format,
+                    'capture_fps':self._rate(self.capture_times) if live else 0,
+                    'last_capture_fps':self._rate(self.capture_times),
+                    'ocr_fps':self._rate(self.ocr_times) if live else 0,
+                    'last_ocr_fps':self._rate(self.ocr_times),
+                    'ocr_ms':round(sum(self.ocr_durations)/len(self.ocr_durations)*1000,1) if self.ocr_durations else None,
+                    'frame_age':round(now-self.last_frame_at,1) if self.last_frame_at else None,
+                    'turn_remaining':round(max(0,self.turn_deadline-now),1) if self.turn_deadline and live else None,
+                    'minimum_seconds':minimum,'recommended_seconds':max(5,minimum),
+                    'rotation_enabled':self.manager.usb_rotation_seconds>0}}
 
     def capture(self):
         while not self.stop.is_set():
@@ -84,40 +132,55 @@ class Worker:
                 self.status = 'Wstrzymana — ostatnia klatka' if self.jpeg else 'Czeka na turę USB'
                 if not self.manager.usb_turns.acquire(self.config['id'],self.stop):
                     return
-                with self.lock:
-                    self.capture_epoch += 1
-                    self.consensus = Consensus()
                 self.status = 'Łączenie'
+            with self.lock:
+                settings=DEFAULT_SETTINGS | self.config.get('settings',{})
+                self.reconfigure.clear()
+                self.capture_epoch += 1
+                self.consensus = Consensus()
+                self.capture_times.clear()
+                self.ocr_times.clear()
+                self.last_ocr_at = None
+                self.turn_deadline = None
+                self.detections = []
             failed = False
             deadline = None
             try:
                 source = self.config['source']
                 if self.config['kind']=='usb':
                     cap = cv2.VideoCapture(source,cv2.CAP_V4L2)
-                    cap.set(cv2.CAP_PROP_FOURCC,cv2.VideoWriter_fourcc(*'MJPG'))
-                    cap.set(cv2.CAP_PROP_FPS,15)
+                    cap.set(cv2.CAP_PROP_FOURCC,cv2.VideoWriter_fourcc(*settings['format']))
                     cap.set(cv2.CAP_PROP_BUFFERSIZE,1)
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH,1280)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT,720)
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH,settings['width'])
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT,settings['height'])
+                    cap.set(cv2.CAP_PROP_FPS,settings['fps'])
                 else:
                     cap = cv2.VideoCapture(source,cv2.CAP_FFMPEG,[cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,5000,cv2.CAP_PROP_READ_TIMEOUT_MSEC,5000])
                 if not cap.isOpened():
                     raise RuntimeError('Brak połączenia')
-                while not self.stop.is_set():
+                with self.lock:
+                    self.device_fps = cap.get(cv2.CAP_PROP_FPS) or None
+                    code=int(cap.get(cv2.CAP_PROP_FOURCC))
+                    self.device_format=''.join(chr((code>>(8*i))&255) for i in range(4)).strip('\x00') or None
+                while not self.stop.is_set() and not self.reconfigure.is_set():
                     if deadline is not None and time.monotonic() >= deadline:
                         break
                     ok, frame = cap.read()
                     if not ok:
                         raise RuntimeError('Brak obrazu')
                     if rotating and deadline is None:
-                        deadline = time.monotonic()+self.manager.usb_rotation_seconds
+                        deadline = time.monotonic()+settings['rotation_seconds']
                     ok, jpeg = cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,75])
                     with self.lock:
                         self.frame = frame
                         self.jpeg = jpeg.tobytes() if ok else None
                         self.sequence += 1
+                        self.capture_times.append(time.monotonic())
+                        self.last_frame_at = self.capture_times[-1]
+                        self.actual_resolution = {'width':frame.shape[1],'height':frame.shape[0]}
+                        self.turn_deadline = deadline
                         self.status = 'Działa'
-                    self.stop.wait(.07)
+                    self.stop.wait(.001 if self.config['kind']=='usb' else .07)
             except Exception:
                 failed = True
                 self.status = 'Brak obrazu — ponawiam'
@@ -127,12 +190,13 @@ class Worker:
             finally:
                 if cap is not None:
                     cap.release()
+                with self.lock:
+                    self.frame = None
+                    self.capture_epoch += 1
+                    self.turn_deadline = None
+                    if not failed:
+                        self.status = ('Wstrzymana — ostatnia klatka' if self.jpeg else 'Czeka na turę USB') if rotating else 'Łączenie'
                 if rotating:
-                    with self.lock:
-                        self.frame = None
-                        self.capture_epoch += 1
-                        if not failed:
-                            self.status = 'Wstrzymana — ostatnia klatka' if self.jpeg else 'Czeka na turę USB'
                     self.manager.usb_turns.release(self.config['id'])
             self.stop.wait(3 if failed else .05)
 
@@ -165,9 +229,14 @@ class Manager:
                 worker.thread.join(timeout=7)
         for key,config in configs.items():
             if key in self.workers:
-                if self.workers[key].config['zones'] != config['zones']:
-                    self.workers[key].consensus = Consensus()
-                self.workers[key].config = config
+                worker=self.workers[key]
+                with worker.lock:
+                    if worker.config.get('settings',{}) != config.get('settings',{}):
+                        worker.reconfigure.set()
+                    if worker.config['zones'] != config['zones'] or worker.reconfigure.is_set():
+                        worker.consensus = Consensus()
+                        worker.capture_epoch += 1
+                    worker.config = config
             else:
                 self.workers[key] = Worker(config,self)
 
@@ -203,7 +272,10 @@ class Manager:
                 try:
                     h,w = frame.shape[:2]
                     reads, boxes = [], []
-                    for result in alpr.predict(frame):
+                    inference_start=time.monotonic()
+                    predictions=alpr.predict(frame)
+                    inference_end=time.monotonic()
+                    for result in predictions:
                         if result.ocr is None:
                             continue
                         box = result.detection.bounding_box
@@ -215,7 +287,15 @@ class Manager:
                             reads.append((result.ocr.text,confidence,x,y,zone))
                     if worker.stop.is_set() or worker.capture_epoch != capture_epoch:
                         continue
-                    worker.detections = boxes
+                    with worker.lock:
+                        if worker.capture_epoch != capture_epoch:
+                            continue
+                        worker.ocr_durations.append(inference_end-inference_start)
+                        if worker.last_ocr_at is not None:
+                            worker.ocr_intervals.append(inference_end-worker.last_ocr_at)
+                        worker.last_ocr_at=inference_end
+                        worker.ocr_times.append(inference_end)
+                        worker.detections = boxes
                     for plate,zone,confidence in worker.consensus.frame(reads):
                         self.store.transition(plate,zone,key,confidence)
                 except Exception:

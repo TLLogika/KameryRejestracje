@@ -45,6 +45,7 @@ def test_workers_release_before_next_usb_and_keep_preview(monkeypatch):
                 active.add(source)
                 opened.append(source)
         def set(self,*args):pass
+        def get(self,key):return 15 if key==cameras.cv2.CAP_PROP_FPS else cameras.cv2.VideoWriter_fourcc(*'MJPG')
         def isOpened(self):return True
         def read(self):return True,np.zeros((24,32,3),dtype=np.uint8)
         def release(self):
@@ -52,7 +53,7 @@ def test_workers_release_before_next_usb_and_keep_preview(monkeypatch):
             with guard:active.remove(self.source)
     monkeypatch.setattr(cameras.cv2,'VideoCapture',Capture)
     manager=SimpleNamespace(usb_rotation_seconds=.15,usb_turns=UsbTurns())
-    workers=[Worker({'id':i,'kind':'usb','source':str(i)},manager) for i in (1,2)]
+    workers=[Worker({'id':i,'kind':'usb','source':str(i),'settings':{'rotation_seconds':.15}},manager) for i in (1,2)]
     try:
         deadline=time.monotonic()+3
         while len(opened)<4 and time.monotonic()<deadline:time.sleep(.01)

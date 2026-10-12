@@ -13,7 +13,7 @@ def test_auth_csrf_devices_zones_and_logout(tmp_path,monkeypatch):
     monkeypatch.setattr(main,'usb_devices',lambda:[{'source':'/dev/video-test','name':'Test','device':'/dev/video-test'}])
     manager=SimpleNamespace(workers={})
     def reload():
-        manager.workers={c['id']:SimpleNamespace(config=c,status='Test',detections=[]) for c in store.cameras()}
+        manager.workers={c['id']:SimpleNamespace(config=c,status='Test',detections=[],minimum_seconds=lambda:3,snapshot=lambda c=c:{k:c[k] for k in ('id','name','kind','zones','settings')}) for c in store.cameras()}
     manager.reload=reload
     main.app.state.manager=manager
     client=TestClient(main.app)
@@ -34,6 +34,17 @@ def test_auth_csrf_devices_zones_and_logout(tmp_path,monkeypatch):
     assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':rect,'departure':rect}).status_code==400
     assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':rect}).status_code==200
     assert client.get('/api/cameras').json()[0]['zones']['arrival']==rect
+    monkeypatch.setattr(main,'usb_modes',lambda source:[{'format':'MJPG','width':640,'height':480,'fps':[5,15]}])
+    assert client.get(f'/api/cameras/{camera}/capabilities').json()['modes']
+    assert client.put(f'/api/cameras/{camera}/settings',json={'rotation_seconds':5}).status_code==403
+    assert client.put(f'/api/cameras/{camera}/settings',headers=headers,json={'rotation_seconds':2}).status_code==422
+    settings={'rotation_seconds':7,'width':640,'height':480,'fps':15,'format':'MJPG'}
+    assert client.put(f'/api/cameras/{camera}/settings',headers=headers,json=settings).status_code==200
+    assert store.cameras()[0]['settings']==settings
+    assert store.cameras()[0]['zones']['arrival']==rect
+    assert client.put(f'/api/cameras/{camera}/settings',headers=headers,json={'fps':30}).status_code==400
+    manager.workers[camera].minimum_seconds=lambda:8
+    assert client.put(f'/api/cameras/{camera}/settings',headers=headers,json={'rotation_seconds':3}).status_code==400
     assert client.get('/api/events?after_id=0').json()=={'events':[]}
     assert client.post('/api/logout',headers=headers).status_code==200
     assert client.get('/api/cameras').status_code==401

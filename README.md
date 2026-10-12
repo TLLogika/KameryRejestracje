@@ -46,7 +46,7 @@ Adresy RTSP/HTTP kamer IP wpisuje się po zalogowaniu. Muszą być osiągalne z 
 
 ## Próba przełączania USB co 5 sekund
 
-Compose domyślnie włącza próbne `USB_ROTATION_SECONDS=5`. Kamery USB pracują kolejno: jedna zbiera obraz przez 5 sekund od pierwszej poprawnej klatki, zwalnia strumień, następnie uruchamia się kolejna. Czas otwierania urządzenia wydłuża pełny cykl. Kamery IP nadal pracują równocześnie.
+Compose domyślnie włącza próbne `USB_ROTATION_SECONDS=5`. Kamery USB pracują kolejno: jedna zbiera obraz przez ustawiony czas (domyślnie 5 sekund) od pierwszej poprawnej klatki, zwalnia strumień, następnie uruchamia się kolejna. Czas otwierania urządzenia wydłuża pełny cykl. Kamery IP nadal pracują równocześnie.
 
 Nieaktywna kamera pokazuje ostatnią klatkę z oznaczeniem „Wstrzymana”. OCR nie analizuje ponownie zatrzymanego obrazu; przy każdej turze zbiera nowe potwierdzenia. Tryb ma przerwy w obserwacji i może przegapić szybki przejazd.
 
@@ -61,6 +61,18 @@ Ponowne włączenie próby:
 ```bash
 USB_ROTATION_SECONDS=5 ./docker.sh up -d --force-recreate
 ```
+
+## Czas i parametry każdej kamery
+
+Po „Powiększ / obszary” zobaczysz rzeczywistą rozdzielczość klatki, FPS zgłoszony przez sterownik, zmierzony FPS przechwytywania, liczbę analiz OCR na sekundę, średni czas analizy, format obrazu, wiek ostatniej klatki i pozostały czas tury. Podczas pauzy bieżące FPS wynoszą zero; pokazane są też ostatnie pomiary aktywnej kamery. Podgląd MJPEG w przeglądarce nadal ma limit około 10 FPS.
+
+Rozwiń „Ustawienia kamery i czas aktywności”. Dla USB możesz zmienić indywidualny czas tury, rozdzielczość, format MJPEG/YUYV oraz FPS. Listy zawierają kombinacje zgłaszane przez urządzenie przez V4L2; nieobsługiwane wartości odrzuca API. Zapis stosuje parametry przy kolejnym otwarciu strumienia i nie wymaga restartu kontenera. Po zmianie rozdzielczości sprawdź obszary detekcji, ponieważ kamera może zmienić pole widzenia.
+
+Minimalny czas to 3 sekundy, zwiększany na podstawie 95. percentyla zmierzonego czasu/częstotliwości analizy: cztery cykle analizy plus 0,5 s zapasu. Domyślnie zalecane jest przynajmniej 5 s. To minimum techniczne, nie gwarancja odczytu — wpływają na niego także oświetlenie, wielkość tablicy i czas obecności pojazdu. Maksymalna tura to 120 s; dłuższa tura wydłuża przerwę pozostałych kamer. Przy wyłączonym przełączaniu (`USB_ROTATION_SECONDS=0`) czas tury nie jest używany.
+
+Parametry kamer IP są odczytywane z otrzymanego obrazu. Rozdzielczość i FPS strumienia IP ustawia się w samej kamerze lub serwerze RTSP; panel nie udaje zdalnej zmiany kodera. Ustawienia USB są przechowywane w SQLite, a istniejąca baza jest migrowana automatycznie bez usuwania kamer ani stref.
+
+Chronione API: `GET /api/cameras/{id}/capabilities` i `PUT /api/cameras/{id}/settings`. Pola ustawień: `rotation_seconds`, `width`, `height`, `fps`, `format`. API listy kamer zawiera `settings` i `metrics`; źródła z danymi logowania nie są w nim ujawniane.
 
 ## Uruchomienie bez kontenera (pomocnicze)
 

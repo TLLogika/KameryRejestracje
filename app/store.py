@@ -4,6 +4,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from .video_settings import DEFAULT_SETTINGS
 
 
 class Store:
@@ -20,11 +21,13 @@ class Store:
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,plate TEXT,action TEXT,camera_id INTEGER,confidence REAL,at TEXT);
         CREATE TABLE IF NOT EXISTS parking(plate TEXT PRIMARY KEY,entered_at TEXT,camera_id INTEGER);
         ''')
+        if 'settings' not in {r[1] for r in self.db.execute('PRAGMA table_info(cameras)')}:
+            self.db.execute("ALTER TABLE cameras ADD COLUMN settings TEXT NOT NULL DEFAULT '{}'")
         self.db.commit()
 
     def cameras(self):
         with self.lock:
-            return [dict(r) | {'zones': json.loads(r['zones'])} for r in self.db.execute('SELECT * FROM cameras')]
+            return [dict(r) | {'zones': json.loads(r['zones']), 'settings': DEFAULT_SETTINGS | json.loads(r['settings'])} for r in self.db.execute('SELECT * FROM cameras')]
 
     def add_camera(self, name, kind, source):
         with self.lock, self.db:
@@ -35,6 +38,10 @@ class Store:
     def zones(self, camera_id, zones):
         with self.lock, self.db:
             self.db.execute('UPDATE cameras SET zones=? WHERE id=?', (json.dumps(zones),camera_id))
+
+    def settings(self, camera_id, settings):
+        with self.lock, self.db:
+            self.db.execute('UPDATE cameras SET settings=? WHERE id=?',(json.dumps(settings),camera_id))
 
     def delete(self, camera_id):
         with self.lock, self.db:
