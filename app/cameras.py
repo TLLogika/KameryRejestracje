@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 from .recognition import Consensus, zone_at
 from .test_video import load_test_sources
+from .store import Store
+from .frame_geometry import crop_for_analysis
 from .video_settings import DEFAULT_SETTINGS, MIN_ROTATION_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -82,6 +84,9 @@ class Worker:
         self.last_ocr_at = None
         self.last_frame_at = None
         self.actual_resolution = None
+        self.preview_resolution = None
+        self.confirmed_reads = 0
+        self.last_confirmation = None
         self.device_fps = None
         self.device_format = None
         self.turn_deadline = None
@@ -117,7 +122,7 @@ class Worker:
                 'test_mode':bool(getattr(self,'test_video',None)),
                 **({'name':self.config['name']+' — TEST: '+self.test_video['label'],'kind':'test'} if getattr(self,'test_video',None) else {}),
                 'settings':DEFAULT_SETTINGS | self.config.get('settings',{}),
-                'metrics':{'resolution':self.actual_resolution,'device_fps':self.device_fps,'format':self.device_format,
+                'metrics':{'detector_input_size':256 if getattr(self,'test_video',None) else 384,'analysis_roi':self.test_video.get('analysis_roi') if getattr(self,'test_video',None) else None,'preview_resolution':getattr(self,'preview_resolution',None),'confirmed_reads':getattr(self,'confirmed_reads',0),'last_confirmation':getattr(self,'last_confirmation',None),'resolution':self.actual_resolution,'device_fps':self.device_fps,'format':self.device_format,
                     'capture_fps':self._rate(self.capture_times) if live else 0,
                     'last_capture_fps':self._rate(self.capture_times),
                     'ocr_fps':self._rate(self.ocr_times) if live else 0,
@@ -152,7 +157,7 @@ class Worker:
             try:
                 source = self.test_video['source'] if self.test_video else self.config['source']
                 if self.test_video:
-                    cap = cv2.VideoCapture(source,cv2.CAP_FFMPEG)
+                    cap = cv2.VideoCapture(source,cv2.CAP_FFMPEG,[cv2.CAP_PROP_N_THREADS,1])
                 elif self.config['kind']=='usb':
                     cap = cv2.VideoCapture(source,cv2.CAP_V4L2)
                     cap.set(cv2.CAP_PROP_FOURCC,cv2.VideoWriter_fourcc(*settings['format']))
@@ -161,7 +166,7 @@ class Worker:
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT,settings['height'])
                     cap.set(cv2.CAP_PROP_FPS,settings['fps'])
                 else:
-                    cap = cv2.VideoCapture(source,cv2.CAP_FFMPEG,[cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,5000,cv2.CAP_PROP_READ_TIMEOUT_MSEC,5000])
+                    cap = cv2.VideoCapture(source,cv2.CAP_FFMPEG,[cv2.CAP_PROP_OPEN_TIMEOUT_MSEC,5000,cv2.CAP_PROP_READ_TIMEOUT_MSEC,5000,cv2.CAP_PROP_N_THREADS,1])
                 if not cap.isOpened():
                     raise RuntimeError('Brak połączenia')
                 with self.lock:
@@ -185,7 +190,11 @@ class Worker:
                         raise RuntimeError('Brak obrazu')
                     if rotating and deadline is None:
                         deadline = time.monotonic()+settings['rotation_seconds']
-                    ok, jpeg = cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,75])
+                    preview=frame
+                    if frame.shape[1]>1280:
+                        factor=math.ceil(frame.shape[1]/1280)
+                        preview=cv2.resize(frame,(frame.shape[1]//factor,frame.shape[0]//factor),interpolation=cv2.INTER_AREA)
+                    ok, jpeg = cv2.imencode('.jpg',preview,[cv2.IMWRITE_JPEG_QUALITY,70])
                     with self.lock:
                         self.frame = frame
                         self.jpeg = jpeg.tobytes() if ok else None
@@ -193,6 +202,7 @@ class Worker:
                         self.capture_times.append(time.monotonic())
                         self.last_frame_at = self.capture_times[-1]
                         self.actual_resolution = {'width':frame.shape[1],'height':frame.shape[0]}
+                        self.preview_resolution = {'width':preview.shape[1],'height':preview.shape[0]}
                         self.turn_deadline = deadline
                         self.status = 'Działa'
                     if self.test_video:
@@ -224,12 +234,14 @@ class Worker:
 class Manager:
     def __init__(self, store):
         self.store = store
+        cv2.setNumThreads(1)
         self.workers = {}
         self.stop = threading.Event()
         self.usb_rotation_seconds = float(os.environ.get('USB_ROTATION_SECONDS','0'))
         if not 0 <= self.usb_rotation_seconds <= 60:
             raise ValueError('USB_ROTATION_SECONDS musi być w zakresie 0–60')
         self.test_sources=load_test_sources(os.environ.get('TEST_CAMERA_SOURCES_FILE',''))
+        self.test_store=Store(Path(__file__).resolve().parent.parent/'data/test-parking.sqlite3') if self.test_sources else None
         self.usb_turns = UsbTurns()
         self.ocr_status = 'Ładowanie modeli'
         self.config_lock = threading.RLock()
@@ -274,7 +286,10 @@ class Manager:
             options = ort.SessionOptions()
             options.intra_op_num_threads = 2
             options.inter_op_num_threads = 1
+            options.add_session_config_entry('session.intra_op.allow_spinning','0')
+            options.add_session_config_entry('session.inter_op.allow_spinning','0')
             alpr = ALPR(detector_model='yolo-v9-t-384-license-plate-end2end',ocr_model='cct-xs-v2-global-model',detector_providers=['CPUExecutionProvider'],ocr_providers=['CPUExecutionProvider'],detector_sess_options=options,ocr_sess_options=options)
+            test_alpr=ALPR(detector_model='yolo-v9-t-256-license-plate-end2end',ocr=alpr.ocr,detector_providers=['CPUExecutionProvider'],detector_sess_options=options) if self.test_sources else alpr
             self.ocr_status = 'Działa'
         except Exception as exc:
             self.ocr_status = 'Błąd ładowania modeli — sprawdź log'
@@ -294,15 +309,18 @@ class Manager:
                     h,w = frame.shape[:2]
                     reads, boxes = [], []
                     inference_start=time.monotonic()
-                    predictions=alpr.predict(frame)
+                    analysis_frame,offset_x,offset_y=crop_for_analysis(frame,worker.test_video.get('analysis_roi') if worker.test_video else None)
+                    predictions=(test_alpr if worker.test_video else alpr).predict(analysis_frame)
                     inference_end=time.monotonic()
                     for result in predictions:
                         if result.ocr is None:
                             continue
                         box = result.detection.bounding_box
-                        x,y = (box.x1+box.x2)/2/w,(box.y1+box.y2)/2/h
+                        x1=max(0,box.x1+offset_x);y1=max(0,box.y1+offset_y)
+                        x2=min(w,box.x2+offset_x);y2=min(h,box.y2+offset_y)
+                        x,y = (x1+x2)/2/w,(y1+y2)/2/h
                         confidence = float(np.mean(result.ocr.confidence))
-                        boxes.append({'text':result.ocr.text,'confidence':confidence,'x':box.x1/w,'y':box.y1/h,'w':(box.x2-box.x1)/w,'h':(box.y2-box.y1)/h})
+                        boxes.append({'text':result.ocr.text,'confidence':confidence,'x':x1/w,'y':y1/h,'w':(x2-x1)/w,'h':(y2-y1)/h})
                         zone = zone_at(worker.config['zones'],x,y)
                         if zone:
                             reads.append((result.ocr.text,confidence,x,y,zone))
@@ -318,11 +336,22 @@ class Manager:
                         worker.ocr_times.append(inference_end)
                         worker.detections = boxes
                     for plate,zone,confidence in worker.consensus.frame(reads):
-                        if not worker.test_video:
-                            self.store.transition(plate,zone,key,confidence)
+                        self.record_confirmation(worker,plate,zone,confidence)
                 except Exception:
                     logger.exception('Błąd rozpoznawania kamery %s',key)
-            self.stop.wait(.25)
+            self.stop.wait(.005)
+
+    def record_confirmation(self,worker,plate,zone,confidence):
+        with worker.lock:
+            worker.confirmed_reads += 1
+            worker.last_confirmation={'plate':plate,'zone':zone,'confidence':confidence}
+        destination=self.test_store if worker.test_video else self.store
+        return destination.transition(plate,zone,worker.config['id'],confidence)
+
+    def parking_store(self):
+        if self.test_store and self.workers and all(w.test_video for w in self.workers.values()):
+            return self.test_store
+        return self.store
 
     def close(self):
         self.stop.set()

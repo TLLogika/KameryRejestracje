@@ -93,7 +93,7 @@ python3 -m venv .venv
 5. Zielona strefa dodaje pojazd do parkingu; czerwona usuwa już obecny pojazd. Powtórzone wjazdy i wyjazdy nie duplikują wpisów. Brak wykrycia nie oznacza automatycznie wyjazdu. Zielona i czerwona strefa muszą odpowiadać rzeczywistemu ruchowi. Kilka kamer obserwujących jednocześnie ten sam pojazd w sprzecznych strefach wymaga poprawienia konfiguracji.
 6. Panel serwera rozwija się po lewej: procesor, RAM, temperatura CPU (jeśli czujnik dostępny), load average 1/5/15 minut, RAM całego procesu kamer/panelu i liczba logicznych wątków CPU.
 
-Przechwytywanie działa w osobnym wątku dla każdej kamery. Jeden wspólny proces rozpoznawania analizuje najnowszą klatkę każdej kamery kolejno, bez kolejki zaległych obrazów; modele CPU mają ograniczenie do dwóch wątków. Wszystkie tablice wykryte na danej klatce są przetwarzane. Przy zwiększaniu liczby kamer spada częstotliwość odczytów na kamerę — należy dobrać liczbę kamer i prędkość przejazdu do wydajności maszyny.
+Przechwytywanie działa w osobnym wątku dla każdej kamery. Jeden wspólny proces rozpoznawania analizuje najnowszą klatkę każdej kamery kolejno, bez kolejki zaległych obrazów; modele CPU mają ograniczenie do dwóch wątków i wyłączone aktywne oczekiwanie między analizami. Pętla nie dodaje stałej przerwy 250 ms. Podgląd JPEG ma maksymalnie 1280 pikseli szerokości i skaluje się całkowitym współczynnikiem (dla 1080p: 960 × 540), a OCR korzysta z pełnej klatki; panel pokazuje osobno obie rozdzielczości. Strumień podglądu pozwala wysyłać do 40 klatek/s, ale rzeczywista szybkość zależy od źródła i obciążenia CPU. Wszystkie tablice wykryte na danej klatce są przetwarzane. Przy zwiększaniu liczby kamer spada częstotliwość odczytów na kamerę — należy dobrać liczbę kamer i prędkość przejazdu do wydajności maszyny.
 
 ## Dane i integracja
 
@@ -147,7 +147,7 @@ Testy automatyczne przechodzą. Test przeglądarkowy potwierdził logowanie, dod
 
 ### Próba z dwoma nagraniami zamiast USB
 
-Panel może tymczasowo zastąpić dwie skonfigurowane kamery USB lokalnymi nagraniami „Car Park” i „Parking Garage” z [UVG-VCM, Ultra Video Group / Tampere University](https://ultravideo.fi/UVG-VCM/index.html). Zbiór jest udostępniany na licencji CC BY 4.0; autorzy proszą o cytowanie: T. Partanen et al., “UVG-VCM: Benchmarking dataset for machine-oriented visual data compression”, QoMEX 2026. Kopie robocze przekonwertowano z podglądów MP4 4K/60 FPS do 1080p/15 FPS. Pliki pozostają w ignorowanym katalogu `data/test-videos/` i nie są wysyłane do GitHub.
+Panel może tymczasowo zastąpić dwie skonfigurowane kamery USB lokalnymi nagraniami „Car Park” i „Parking Garage” z [UVG-VCM, Ultra Video Group / Tampere University](https://ultravideo.fi/UVG-VCM/index.html). Zbiór jest udostępniany na licencji CC BY 4.0; autorzy proszą o cytowanie: T. Partanen et al., “UVG-VCM: Benchmarking dataset for machine-oriented visual data compression”, QoMEX 2026. Kopie robocze przekonwertowano z podglądów MP4 4K/60 FPS do 1080p/15 FPS. Car Park wydłużono czterokrotnie z 10 do około 40 sekund, wykorzystując kolejne oryginalne klatki 60 FPS, zamiast dodawać powtórzenia do głosowania OCR. Pliki pozostają w ignorowanym katalogu `data/test-videos/` i nie są wysyłane do GitHub.
 
 Przygotowanie pobiera tylko dwie małe wersje MP4 (łącznie około 195 MB), bez surowych plików YUV. Wymaga `ffmpeg` na maszynie. Następnie włącz podmianę:
 
@@ -157,7 +157,7 @@ python3 scripts/set_test_videos.py
 ./docker.sh up -d --force-recreate --wait
 ```
 
-Oba nagrania działają równocześnie w pętli; tytuły podglądów zawierają „TEST” i nazwę filmu. OCR i obszary działają, ale odczyty z nagrań nie zapisują zdarzeń w bazie parkingu. Konfiguracja źródeł USB, ich ustawienia i zaznaczenia pozostają zachowane. Wyłączenie próby:
+Oba nagrania działają równocześnie w pętli; podczas testu detektor 256 × 256 analizuje skalibrowany obszar drogi obejmujący wszystkie tablice oznaczone przez autorów nagrań (granice wyznaczane z adnotacji z marginesem). OCR odczytuje rzeczywiste wycinki tablic z pełnej klatki; teksty z adnotacji nie są podawane do głosowania. Dla fizycznych kamer pozostaje detektor 384 × 384 i analiza całego obrazu. Obszar oraz rozmiar wejścia detektora są widoczne w powiększonym podglądzie. tytuły podglądów zawierają „TEST” i nazwę filmu. OCR i obszary działają; potwierdzenia z co najmniej trzech różnych przechwyconych klatek zapisują zdarzenia w osobnej bazie `data/test-parking.sqlite3`. Jeśli wszystkie kamery są testowe, panel pokazuje parking i zdarzenia z tej bazy, z oznaczeniem TEST. API zdarzeń i integracja nadal korzystają z właściwej bazy parkingu. Liczba potwierdzeń i ostatnia tablica są widoczne w powiększonym podglądzie. Konfiguracja źródeł USB, ich ustawienia i zaznaczenia pozostają zachowane. Wyłączenie próby:
 
 ```bash
 python3 scripts/set_test_videos.py --off

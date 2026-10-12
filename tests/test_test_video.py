@@ -55,3 +55,47 @@ def test_local_mapping_is_private_and_preserves_camera_id(tmp_path,monkeypatch):
     config.write_text(json.dumps({'8':{'file':'sample.mp4','label':'Sample'}}))
     result=load_test_sources(config)
     assert result=={8:{'source':str(root/'sample.mp4'),'label':'Sample'}}
+
+
+def test_three_different_frames_confirm_into_test_database_only(tmp_path):
+    from app.cameras import Manager
+    from app.recognition import Consensus
+    from app.store import Store
+    manager=Manager.__new__(Manager)
+    manager.store=Store(tmp_path/'production.sqlite3')
+    manager.test_store=Store(tmp_path/'test.sqlite3')
+    worker=SimpleNamespace(lock=threading.Lock(),confirmed_reads=0,last_confirmation=None,test_video={'label':'Test'},config={'id':1})
+    manager.workers={1:worker}
+    vote=Consensus()
+    for index in range(3):
+        confirmed=vote.frame([('TEST123',.99,.2+.001*index,.4,'arrival')],now=index*.4)
+        for plate,zone,confidence in confirmed:
+            manager.record_confirmation(worker,plate,zone,confidence)
+        assert len(manager.test_store.events(0))==(1 if index==2 else 0)
+    assert not manager.store.events(0)
+    assert worker.confirmed_reads==1
+    assert manager.parking_store() is manager.test_store
+    worker.test_video=None
+    assert manager.parking_store() is manager.store
+
+
+def test_road_calibration_contains_all_annotated_plates_and_ignores_metadata(tmp_path):
+    from scripts.set_test_videos import road_roi
+    annotation=tmp_path/'annotations.json'
+    annotation.write_text(json.dumps({'version':'1.0','1':[[1,.4,.5,.4,.5,'FIRST']], '2':[[1,.05,.2,.2,.3,'FIRST'],[2,.6,.8,.4,.9,'SECOND']]}))
+    roi=road_roi(annotation)
+    assert roi['x']<.05 and roi['y']<.2
+    assert roi['x']+roi['w']>.8 and roi['y']+roi['h']>.9
+
+
+def test_analysis_crop_uses_full_frame_coordinates_for_zones():
+    from app.frame_geometry import crop_for_analysis
+    from app.recognition import zone_at
+    frame=np.zeros((100,200,3),dtype=np.uint8)
+    roi={'x':.25,'y':.4,'w':.5,'h':.3}
+    crop,x,y=crop_for_analysis(frame,roi)
+    assert crop.shape==(30,100,3) and (x,y)==(50,40)
+    # A plate centre (20,10) in the crop is (70,50) in the original image.
+    zones={'arrival':[{'x':.3,'y':.45,'w':.1,'h':.1}]}
+    assert zone_at(zones,(20+x)/200,(10+y)/100)=='arrival'
+    assert crop_for_analysis(frame)[0] is frame

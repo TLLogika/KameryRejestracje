@@ -229,12 +229,12 @@ async def stream(camera_id: int,request: Request,token=Depends(auth)):
             if jpeg and sequence!=previous:
                 previous = sequence
                 yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n'+jpeg+b'\r\n'
-            await asyncio.sleep(.1)
+            await asyncio.sleep(.025)
     return StreamingResponse(frames(),media_type='multipart/x-mixed-replace; boundary=frame')
 
 @app.get('/api/parking',dependencies=[Depends(auth)])
 def parking():
-    return store.parking()
+    return (app.state.manager.parking_store() if hasattr(app.state.manager,'parking_store') else store).parking()
 
 @app.get('/api/events',dependencies=[Depends(auth)])
 def events(after_id: int = 0):
@@ -246,7 +246,7 @@ def machine_events(after_id: int = 0):
 
 @app.get('/api/integration/parking',dependencies=[Depends(machine_auth)])
 def machine_parking():
-    return store.parking()
+    return (app.state.manager.parking_store() if hasattr(app.state.manager,'parking_store') else store).parking()
 
 process = psutil.Process()
 psutil.cpu_percent()
@@ -255,7 +255,7 @@ def server():
     memory = psutil.virtual_memory()
     temperatures = psutil.sensors_temperatures()
     readings = [t.current for key,values in temperatures.items() if key in {'coretemp','k10temp','cpu_thermal'} for t in values]
-    return {'cpu':psutil.cpu_percent(),'ram_percent':memory.percent,'ram_used':memory.used,'ram_total':memory.total,'temperature':max(readings) if readings else None,'load':os.getloadavg(),'process_ram':process.memory_info().rss,'cpu_threads':psutil.cpu_count(),'ocr':app.state.manager.ocr_status}
+    return {'test_mode':bool(getattr(app.state.manager,'test_store',None)) and app.state.manager.parking_store() is app.state.manager.test_store, 'cpu':psutil.cpu_percent(),'ram_percent':memory.percent,'ram_used':memory.used,'ram_total':memory.total,'temperature':max(readings) if readings else None,'load':os.getloadavg(),'process_ram':process.memory_info().rss,'cpu_threads':psutil.cpu_count(),'ocr':app.state.manager.ocr_status}
 
 @app.get('/')
 def index():

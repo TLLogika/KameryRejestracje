@@ -7,6 +7,15 @@ import sqlite3
 
 ROOT=Path(__file__).resolve().parent.parent
 
+def road_roi(annotation_file):
+    data=json.loads(annotation_file.read_text())
+    boxes=[row for key,rows in data.items() if key.isdigit() for row in rows]
+    if not boxes:
+        raise ValueError('Brak obszarów tablic w adnotacjach nagrania')
+    x=max(0,min(row[1] for row in boxes)-.03);right=min(1,max(row[2] for row in boxes)+.03)
+    y=max(0,min(row[3] for row in boxes)-.03);bottom=min(1,max(row[4] for row in boxes)+.03)
+    return {'x':x,'y':y,'w':right-x,'h':bottom-y}
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--off',action='store_true',help='Przywróć kamery USB przy następnym restarcie panelu')
@@ -24,7 +33,13 @@ def main():
     for filename,label in videos:
         if not (ROOT/'data/test-videos'/filename).is_file():
             parser.error('Brakuje lokalnego nagrania: '+filename)
-    config.write_text(json.dumps({str(ident):{'file':filename,'label':label} for ident,(filename,label) in zip(ids,videos)},indent=2)+'\n')
+    mapping={}
+    for ident,(filename,label) in zip(ids,videos):
+        annotation=ROOT/'data/test-videos'/(filename.split('-')[0]+'_annotations.json')
+        if not annotation.is_file():
+            parser.error('Brakuje adnotacji: uruchom scripts/prepare_test_videos.py')
+        mapping[str(ident)]={'file':filename,'label':label,'analysis_roi':road_roi(annotation)}
+    config.write_text(json.dumps(mapping,indent=2)+'\n')
     config.chmod(0o600)
     print('Podmieniono dwie kamery na nagrania. Uruchom: ./docker.sh up -d --force-recreate --wait')
 
