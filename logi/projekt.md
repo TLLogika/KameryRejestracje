@@ -32,3 +32,9 @@ Użytkownik potwierdził brak kamer IP na teraz i komunikację baz przez IP ze w
 - Dwa równoczesne lokalne strumienie MJPEG w izolowanej bazie: OCR obu kamer, potwierdzony wjazd bez duplikacji, przełączenie stref na wyjazd, potwierdzony wyjazd.
 - API integracji sprawdzone lokalnie rzeczywistym odbiornikiem; chronione API bez sesji/klucza zwraca 401.
 - Wspólny kontroler obu fizycznych kamer USB odrzuca drugi strumień z `VIDIOC_STREAMON: No space left on device`. Potwierdzono niezależnie od OpenCV przy użyciu v4l2-ctl. Próby MJPEG i YUYV przy niższej rozdzielczości i FPS nie usunęły ograniczenia. Wymagane rozdzielenie kontrolerów USB / poprawa przekazywania USB w wirtualizatorze.
+
+## 2026-10-12 — dostęp przez VPN
+
+Domyślny port zmieniono na 10000. run.sh wykrywa adres IPv4 interfejsu tailscale0 i nasłuchuje na nim; bez interfejsu VPN używa localhost. HOST/PORT nadal pozwalają wybrać adres i port. Poprzedni nasłuch na 127.0.0.1 uniemożliwiał dostęp z innego komputera przez VPN.
+
+Sprawdzenie po zmianie: 7 testów OK; przeglądarka pod http://ADRES_VPN_MASZYNY:10000 wyświetla panel, logowanie i edytor; MJPEG zwraca kompletną klatkę JPEG, OCR działa. Nasłuch potwierdzony na ADRES_VPN_MASZYNY:10000. Tailscale ping do aktywnego komputera zakończony powodzeniem. Test HTTP wykonano z serwera do jego adresu VPN, nie z przeglądarki użytkownika. Druga kamera nadal ma wcześniej opisane ograniczenie kontrolera USB.
