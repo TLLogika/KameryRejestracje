@@ -13,6 +13,7 @@ services:
       - "${PANEL_BIND_IP:-127.0.0.1}:${PANEL_PORT:-10000}:10000"
     environment:
       ALPR_CACHE_DIR: /app/data/model-cache
+      USB_ROTATION_SECONDS: ${USB_ROTATION_SECONDS:-5}
     volumes:
       - ./data:/app/data
       - ./dsecret:/app/dsecret

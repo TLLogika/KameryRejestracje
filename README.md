@@ -44,6 +44,24 @@ Adresy RTSP/HTTP kamer IP wpisuje się po zalogowaniu. Muszą być osiągalne z 
 
 `down` usuwa kontener i jego sieć; dane w katalogach hosta pozostają. Restart kontenera unieważnia sesje — trzeba zalogować się ponownie. Konfiguracja ma automatyczny restart i healthcheck strony panelu; stan modeli OCR jest dodatkowo widoczny w panelu serwera. Dane CPU/RAM odnoszą się do wartości udostępnionych przez host kontenerowi, RAM procesu dotyczy procesu aplikacji w kontenerze.
 
+## Próba przełączania USB co 5 sekund
+
+Compose domyślnie włącza próbne `USB_ROTATION_SECONDS=5`. Kamery USB pracują kolejno: jedna zbiera obraz przez 5 sekund od pierwszej poprawnej klatki, zwalnia strumień, następnie uruchamia się kolejna. Czas otwierania urządzenia wydłuża pełny cykl. Kamery IP nadal pracują równocześnie.
+
+Nieaktywna kamera pokazuje ostatnią klatkę z oznaczeniem „Wstrzymana”. OCR nie analizuje ponownie zatrzymanego obrazu; przy każdej turze zbiera nowe potwierdzenia. Tryb ma przerwy w obserwacji i może przegapić szybki przejazd.
+
+Powrót do równoczesnego przechwytywania bez zmiany bazy i stref:
+
+```bash
+USB_ROTATION_SECONDS=0 ./docker.sh up -d --force-recreate
+```
+
+Ponowne włączenie próby:
+
+```bash
+USB_ROTATION_SECONDS=5 ./docker.sh up -d --force-recreate
+```
+
 ## Uruchomienie bez kontenera (pomocnicze)
 
 ```bash

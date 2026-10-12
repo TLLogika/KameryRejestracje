@@ -1,4 +1,5 @@
 import glob
+from collections import deque
 import logging
 import os
 import threading
@@ -34,6 +35,33 @@ def usb_devices():
     return devices
 
 
+class UsbTurns:
+    """FIFO gate held until VideoCapture.release finishes: at most one USB stream."""
+    def __init__(self):
+        self.condition = threading.Condition()
+        self.waiting = deque()
+        self.owner = None
+
+    def acquire(self, camera_id, stop):
+        with self.condition:
+            self.waiting.append(camera_id)
+            while not stop.is_set():
+                if self.owner is None and self.waiting[0] == camera_id:
+                    self.waiting.popleft()
+                    self.owner = camera_id
+                    return True
+                self.condition.wait(.1)
+            self.waiting.remove(camera_id)
+            self.condition.notify_all()
+            return False
+
+    def release(self, camera_id):
+        with self.condition:
+            if self.owner == camera_id:
+                self.owner = None
+                self.condition.notify_all()
+
+
 class Worker:
     def __init__(self, config, manager):
         self.config, self.manager = config, manager
@@ -41,6 +69,7 @@ class Worker:
         self.lock = threading.Lock()
         self.frame = self.jpeg = None
         self.sequence = 0
+        self.capture_epoch = 0
         self.status = 'Łączenie'
         self.detections = []
         self.consensus = Consensus()
@@ -50,6 +79,17 @@ class Worker:
     def capture(self):
         while not self.stop.is_set():
             cap = None
+            rotating = self.config['kind']=='usb' and self.manager.usb_rotation_seconds > 0
+            if rotating:
+                self.status = 'Wstrzymana — ostatnia klatka' if self.jpeg else 'Czeka na turę USB'
+                if not self.manager.usb_turns.acquire(self.config['id'],self.stop):
+                    return
+                with self.lock:
+                    self.capture_epoch += 1
+                    self.consensus = Consensus()
+                self.status = 'Łączenie'
+            failed = False
+            deadline = None
             try:
                 source = self.config['source']
                 if self.config['kind']=='usb':
@@ -64,9 +104,13 @@ class Worker:
                 if not cap.isOpened():
                     raise RuntimeError('Brak połączenia')
                 while not self.stop.is_set():
+                    if deadline is not None and time.monotonic() >= deadline:
+                        break
                     ok, frame = cap.read()
                     if not ok:
                         raise RuntimeError('Brak obrazu')
+                    if rotating and deadline is None:
+                        deadline = time.monotonic()+self.manager.usb_rotation_seconds
                     ok, jpeg = cv2.imencode('.jpg',frame,[cv2.IMWRITE_JPEG_QUALITY,75])
                     with self.lock:
                         self.frame = frame
@@ -75,6 +119,7 @@ class Worker:
                         self.status = 'Działa'
                     self.stop.wait(.07)
             except Exception:
+                failed = True
                 self.status = 'Brak obrazu — ponawiam'
                 with self.lock:
                     self.frame = self.jpeg = None
@@ -82,7 +127,14 @@ class Worker:
             finally:
                 if cap is not None:
                     cap.release()
-            self.stop.wait(3)
+                if rotating:
+                    with self.lock:
+                        self.frame = None
+                        self.capture_epoch += 1
+                        if not failed:
+                            self.status = 'Wstrzymana — ostatnia klatka' if self.jpeg else 'Czeka na turę USB'
+                    self.manager.usb_turns.release(self.config['id'])
+            self.stop.wait(3 if failed else .05)
 
 
 class Manager:
@@ -90,6 +142,10 @@ class Manager:
         self.store = store
         self.workers = {}
         self.stop = threading.Event()
+        self.usb_rotation_seconds = float(os.environ.get('USB_ROTATION_SECONDS','0'))
+        if not 0 <= self.usb_rotation_seconds <= 60:
+            raise ValueError('USB_ROTATION_SECONDS musi być w zakresie 0–60')
+        self.usb_turns = UsbTurns()
         self.ocr_status = 'Ładowanie modeli'
         self.config_lock = threading.RLock()
         self.reload()
@@ -139,6 +195,7 @@ class Manager:
             for key,worker in list(self.workers.items()):
                 with worker.lock:
                     sequence = worker.sequence
+                    capture_epoch = worker.capture_epoch
                     frame = None if worker.frame is None else worker.frame.copy()
                 if frame is None or processed.get(key)==sequence:
                     continue
@@ -156,7 +213,7 @@ class Manager:
                         zone = zone_at(worker.config['zones'],x,y)
                         if zone:
                             reads.append((result.ocr.text,confidence,x,y,zone))
-                    if worker.stop.is_set():
+                    if worker.stop.is_set() or worker.capture_epoch != capture_epoch:
                         continue
                     worker.detections = boxes
                     for plate,zone,confidence in worker.consensus.frame(reads):
