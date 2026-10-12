@@ -1,0 +1,5 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+opencv-python-headless>=4.10,<5
+psutil>=6,<8
+fast-alpr[onnx]>=0.3,<1

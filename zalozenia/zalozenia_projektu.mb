@@ -1,0 +1,40 @@
+Projekt Projekt w swoich fundamentach ma sluzyc do odczytu oraz porownania odczytanych przez kamery adresow rejestracyjnych samochodow z inna baza danych, aka ten projekt ten moduł odczytuje z podgladem rejestracje z kamer
+
+Kamery aktualnie sa polaczone po usb do maszyny fizycznie natomiast projekt powinien wylapywac i kamery polaczone po usb jak i po IP i dac uzytkownikowi opcje dodania takiej kamery do podgladu jak i by odczytywala te tablice rejestracyjne
+
+Odczytane tablice rejestracyjne powinny byc dostepne w bazie danych najlepiej sqllite z ktorej bedzie szla komunikacja do innej maszynki z inna baza danych
+
+musi byc wiadomo jakie tablice sa aktualnie na parkingu, jakie juz na nim nie sa
+aka wjazd, aktualnie na parkingu, oposcil parking w takim momencie
+
+Osigniecie tego celu monza by zrobic poprzez zaznaczenie miejsca na kamerze (zielonym kwadratem oraz czerwonym) zielonym gdzie znajduje sie obszar parkingu na kamerze i czerwonymi gdzie nie znajduje sie juz obaszar parkingu
+
+Kamery najlepiej w podgladzie ulozyc w kratce 2x2 z mozliwoscia przyblizenia (dania na caly ekran jednej) by zedytowac zaznaczone pola
+
+Gdyby bylo wiecej kamer nalezy tylko zrobic druga strone ktora mozna przeklikac strzalka
+
+Aktualne rejestracje powinny pojawic sie ponize w 3 kolumnach
+Przyjazd
+rejestracja kiedy
+Aktualnie
+rejestracja teraz
+Odjazd
+rejestracja kiedy
+
+
+Musimy miec pewnosc jaka to rejestracja wiec system musi zebrac pare skanow rejestracji i porownac je ze soba, jaki wynik jest najbardziej prawdopodobny
+
+Do skanowania rejestracji uzyjemy https://github.com/ankandrew/fast-alpr
+zintegrujemy to w swoj projekt
+
+
+
+(poglad kwadracika i wygladu kamery)
+
+
+
+Musi byc przed podgladem logowanie do danego panelu (ADMIN i wygenerowane haslo)
+
+Projekt musi zawierac folder logi z zalozeniami, zmianami, uzytymi technologiami, opisami funkcji, i gdy uzyte API
+
+Folder dsecret jest dla .env i innych wrzliwych danych ktore nie moga trafic na gita
