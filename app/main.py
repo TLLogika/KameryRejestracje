@@ -183,21 +183,25 @@ class Rect(BaseModel):
     h: float = Field(gt=.01,le=1)
 
 class Zones(BaseModel):
-    arrival: Rect | None = None
-    departure: Rect | None = None
+    arrival: Rect | list[Rect] | None = None
+    departure: Rect | list[Rect] | None = None
 
 @app.put('/api/cameras/{camera_id}/zones',dependencies=[Depends(auth)])
 def zones(camera_id: int,body: Zones):
     if camera_id not in app.state.manager.workers:
         raise HTTPException(404,'Nie ma takiej kamery')
     values = body.model_dump(exclude_none=True)
-    for r in values.values():
-        if r['x']+r['w']>1.0001 or r['y']+r['h']>1.0001:
-            raise HTTPException(400,'Obszar wychodzi poza obraz')
-    if len(values)==2:
-        a,b = values.values()
-        if max(a['x'],b['x'])<min(a['x']+a['w'],b['x']+b['w']) and max(a['y'],b['y'])<min(a['y']+a['h'],b['y']+b['h']):
-            raise HTTPException(400,'Obszary wjazdu i wyjazdu nie mogą się nakładać')
+    groups={kind:(value if isinstance(value,list) else [value]) for kind,value in values.items()}
+    for rectangles in groups.values():
+        if len(rectangles)>32:
+            raise HTTPException(400,'Możesz dodać maksymalnie 32 obszary każdego koloru')
+        for r in rectangles:
+            if r['x']+r['w']>1.0001 or r['y']+r['h']>1.0001:
+                raise HTTPException(400,'Obszar wychodzi poza obraz')
+    for a in groups.get('arrival',[]):
+        for b in groups.get('departure',[]):
+            if max(a['x'],b['x'])<min(a['x']+a['w'],b['x']+b['w']) and max(a['y'],b['y'])<min(a['y']+a['h'],b['y']+b['h']):
+                raise HTTPException(400,'Zielone i czerwone obszary nie mogą się nakładać')
     store.zones(camera_id,values)
     app.state.manager.reload()
     return {'ok':True}

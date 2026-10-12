@@ -39,5 +39,5 @@ class Consensus:
 
 
 def zone_at(zones, x, y):
-    hits = [name for name,r in zones.items() if r['x'] <= x <= r['x']+r['w'] and r['y'] <= y <= r['y']+r['h']]
-    return hits[0] if len(hits)==1 else None
+    hits = {name for name,value in zones.items() for r in (value if isinstance(value,list) else [value]) if r['x'] <= x <= r['x']+r['w'] and r['y'] <= y <= r['y']+r['h']}
+    return next(iter(hits)) if len(hits)==1 else None

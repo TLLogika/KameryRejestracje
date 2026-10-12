@@ -34,6 +34,13 @@ def test_auth_csrf_devices_zones_and_logout(tmp_path,monkeypatch):
     assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':rect,'departure':rect}).status_code==400
     assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':rect}).status_code==200
     assert client.get('/api/cameras').json()[0]['zones']['arrival']==rect
+    multiple={'arrival':[rect,{'x':.5,'y':0,'w':.3,'h':.4}], 'departure':[{'x':0,'y':.6,'w':.3,'h':.3},{'x':.5,'y':.6,'w':.3,'h':.3}]}
+    assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json=multiple).status_code==200
+    assert store.cameras()[0]['zones']==multiple
+    assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':[rect],'departure':[rect]}).status_code==400
+    assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':[rect]*33}).status_code==400
+    assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':[{'x':.9,'y':0,'w':.3,'h':.4}]}).status_code==400
+    assert client.put(f'/api/cameras/{camera}/zones',headers=headers,json={'arrival':rect}).status_code==200
     monkeypatch.setattr(main,'usb_modes',lambda source:[{'format':'MJPG','width':640,'height':480,'fps':[5,15]}])
     assert client.get(f'/api/cameras/{camera}/capabilities').json()['modes']
     assert client.put(f'/api/cameras/{camera}/settings',json={'rotation_seconds':5}).status_code==403

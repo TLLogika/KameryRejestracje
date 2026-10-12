@@ -88,7 +88,7 @@ python3 -m venv .venv
 
 1. Zaloguj się i wybierz „Dodaj kamerę”. Lista USB zawiera urządzenia maszyny z możliwością przechwytywania wideo, a nie urządzenia komputera przeglądarki. Urządzenia zajęte przez inny proces mogą być na liście, ale nie udostępniać obrazu.
 2. Kamery są wyświetlane po cztery, w układzie 2×2. Strzałki przełączają kolejne strony.
-3. „Powiększ / obszary” otwiera duży podgląd. Wybierz zielony obszar wjazdu/parkingu albo czerwony obszar wyjazdu, przeciągnij po obrazie i zapisz. Strefy nie mogą się nakładać. Można usunąć wybraną strefę. Bez zaznaczonych stref tablice są rozpoznawane, ale nie zmieniają stanu parkingu.
+3. „Powiększ / obszary” otwiera duży podgląd. Wybierz kolor wjazdu/parkingu albo wyjazdu. Każde zaznaczenie w trybie „Nowy obszar” dodaje kolejny prostokąt. Możesz zapisać do 32 zielonych i 32 czerwonych obszarów na kamerę. Wybierz numer, aby przerysować lub usunąć pojedynczy obszar; „Dodaj obszar” wraca do dodawania. Zapisz wszystkie zmiany przyciskiem „Zapisz obszary”. Zielone i czerwone obszary nie mogą się nakładać; obszary tego samego koloru mogą nachodzić na siebie. Dotychczasowe pojedyncze zaznaczenia pozostają obsługiwane. Bez zaznaczonych stref tablice są rozpoznawane, ale nie zmieniają stanu parkingu.
 4. Środek wykrytej tablicy określa strefę. Odczyt musi wygrać co najmniej trzy głosy z ostatnich 10 klatek w oknie 12 sekund, mieć co najmniej 60% głosów i pewność OCR co najmniej 80%. Głosowanie odbywa się osobno dla przestrzennych śladów tablic i dla każdej kamery. To próg techniczny, nie gwarancja bezbłędnego OCR — jakość należy sprawdzić na rzeczywistych tablicach i oświetleniu parkingu.
 5. Zielona strefa dodaje pojazd do parkingu; czerwona usuwa już obecny pojazd. Powtórzone wjazdy i wyjazdy nie duplikują wpisów. Brak wykrycia nie oznacza automatycznie wyjazdu. Zielona i czerwona strefa muszą odpowiadać rzeczywistemu ruchowi. Kilka kamer obserwujących jednocześnie ten sam pojazd w sprzecznych strefach wymaga poprawienia konfiguracji.
 6. Panel serwera rozwija się po lewej: procesor, RAM, temperatura CPU (jeśli czujnik dostępny), load average 1/5/15 minut, RAM całego procesu kamer/panelu i liczba logicznych wątków CPU.
@@ -103,7 +103,7 @@ API wymaga zalogowania do panelu: `POST /api/login` z JSON `{"username":"ADMIN",
 
 - `GET /api/devices`: lokalne urządzenia USB.
 - `GET/POST /api/cameras`: lista/dodawanie kamer.
-- `PUT /api/cameras/{id}/zones`: prostokąty `arrival`, `departure` ze współrzędnymi `x,y,w,h` w zakresie 0–1.
+- `PUT /api/cameras/{id}/zones`: listy prostokątów `arrival`, `departure` ze współrzędnymi `x,y,w,h` w zakresie 0–1; starszy format pojedynczego prostokąta także jest obsługiwany.
 - `DELETE /api/cameras/{id}`: usunięcie konfiguracji i zatrzymanie przechwytywania.
 - `GET /api/cameras/{id}/stream`: podgląd MJPEG, wymaga sesji.
 - `GET /api/parking`: trzy listy; historia w interfejsie to ostatnie 100 wpisów każdej kategorii.
