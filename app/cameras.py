@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 import threading
+import time
 import cv2
 from .performance import PerformanceSettings, settings_for
 from .capture import Worker
@@ -58,16 +59,32 @@ class Manager:
                 with worker.lock:
                     if worker.config.get("settings", {}) != config.get("settings", {}):
                         worker.reconfigure.set()
-                    if worker.config["zones"] != config["zones"] or worker.reconfigure.is_set():
+                    motion_changed = worker.config.get("motion", {}) != config.get(
+                        "motion", {}
+                    ) or worker.config["zones"].get("motion") != config["zones"].get("motion")
+                    if motion_changed:
+                        worker.motion_gate.reset()
+                        worker.motion_allowed = not config.get("motion", {}).get("enabled", False)
+                        worker.last_ocr_at = None
+                        worker.ocr_intervals.clear()
+                        worker.ocr_times.clear()
+                    if (
+                        motion_changed
+                        or worker.config["zones"] != config["zones"]
+                        or worker.reconfigure.is_set()
+                    ):
                         worker.consensus = Consensus()
                         worker.capture_epoch += 1
+                        worker.detections = []
                     worker.config = config
             else:
                 self.workers[key] = Worker(config, self)
 
     def record_confirmation(self, worker, plate, zone, confidence):
         with worker.lock:
-            if not settings_for(self)["ocr_enabled"]:
+            if not settings_for(self)["ocr_enabled"] or not getattr(
+                worker, "can_analyze", lambda now: True
+            )(time.monotonic()):
                 return False
             worker.confirmed_reads += 1
             worker.last_confirmation = {"plate": plate, "zone": zone, "confidence": confidence}

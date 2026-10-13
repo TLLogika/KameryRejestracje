@@ -5,6 +5,7 @@ import sqlite3
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from .motion import DEFAULT_MOTION
 from .video_settings import DEFAULT_SETTINGS
 
 
@@ -27,6 +28,8 @@ class Store:
         )
         if "settings" not in {r[1] for r in self.db.execute("PRAGMA table_info(cameras)")}:
             self.db.execute("ALTER TABLE cameras ADD COLUMN settings TEXT NOT NULL DEFAULT '{}'")
+        if "motion" not in {r[1] for r in self.db.execute("PRAGMA table_info(cameras)")}:
+            self.db.execute("ALTER TABLE cameras ADD COLUMN motion TEXT NOT NULL DEFAULT '{}'")
         self.db.commit()
 
     def cameras(self):
@@ -36,6 +39,7 @@ class Store:
                 | {
                     "zones": json.loads(r["zones"]),
                     "settings": DEFAULT_SETTINGS | json.loads(r["settings"]),
+                    "motion": DEFAULT_MOTION | json.loads(r["motion"]),
                 }
                 for r in self.db.execute("SELECT * FROM cameras")
             ]
@@ -118,4 +122,10 @@ class Store:
         with self.lock, self.db:
             self.db.execute(
                 "INSERT OR REPLACE INTO preferences VALUES(?,?)", (key, json.dumps(value))
+            )
+
+    def motion(self, camera_id, settings):
+        with self.lock, self.db:
+            self.db.execute(
+                "UPDATE cameras SET motion=? WHERE id=?", (json.dumps(settings), camera_id)
             )

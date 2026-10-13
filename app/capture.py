@@ -6,6 +6,7 @@ import math
 import threading
 import time
 import cv2
+from .motion import MotionGate, DEFAULT_MOTION
 from .performance import settings_for
 from .recognition import Consensus
 from .usb_bridge import BridgeCapture
@@ -26,6 +27,8 @@ class Worker:
         self.preview_times = deque(maxlen=300)
         self.preview_durations = deque(maxlen=120)
         self.last_preview_at = 0
+        self.motion_gate = MotionGate()
+        self.motion_allowed = True
         self.sequence = 0
         self.capture_epoch = 0
         self.reconfigure = threading.Event()
@@ -88,7 +91,30 @@ class Worker:
                     else {}
                 ),
                 "settings": DEFAULT_SETTINGS | self.config.get("settings", {}),
+                "motion": DEFAULT_MOTION | self.config.get("motion", {}),
                 "metrics": {
+                    "motion": {
+                        "active": self.can_analyze(now),
+                        "ocr_enabled": settings_for(self.manager)["ocr_enabled"],
+                        "changed_percent": (
+                            round(self.motion_gate.changed_percent, 2)
+                            if getattr(self, "motion_gate", None)
+                            else 0
+                        ),
+                        "remaining_seconds": (
+                            round(max(0, self.motion_gate.active_until - now), 1)
+                            if getattr(self, "motion_gate", None)
+                            else 0
+                        ),
+                        "effective_seconds": (
+                            self.motion_gate.effective_seconds
+                            if getattr(self, "motion_gate", None)
+                            else 0
+                        ),
+                        "triggers": (
+                            self.motion_gate.triggers if getattr(self, "motion_gate", None) else 0
+                        ),
+                    },
                     "detector_input_size": 256 if getattr(self, "test_video", None) else 384,
                     "analysis_roi": (
                         self.test_video.get("analysis_roi")
@@ -105,7 +131,9 @@ class Worker:
                     "last_capture_fps": self._rate(self.capture_times),
                     "ocr_fps": (
                         self._rate(self.ocr_times)
-                        if live and settings_for(self.manager)["ocr_enabled"]
+                        if live
+                        and settings_for(self.manager)["ocr_enabled"]
+                        and self.can_analyze(now)
                         else 0
                     ),
                     "preview_enabled": settings_for(self.manager)["preview_enabled"],
@@ -225,6 +253,7 @@ class Worker:
                         raise RuntimeError("Brak obrazu")
                     if rotating and deadline is None:
                         deadline = time.monotonic() + settings["rotation_seconds"]
+                    self.observe_motion(frame)
                     self.encode_preview(frame)
                     with self.lock:
                         self.frame = frame
@@ -301,3 +330,33 @@ class Worker:
             self.jpeg = jpeg.tobytes() if ok else None
             self.preview_sequence += 1
             self.preview_resolution = {"width": preview.shape[1], "height": preview.shape[0]}
+
+    def can_analyze(self, now):
+        if not self.config.get("motion", {}).get("enabled", False):
+            return True
+        return bool(self.config["zones"].get("motion")) and self.motion_gate.allowed(now)
+
+    def observe_motion(self, frame):
+        settings = DEFAULT_MOTION | self.config.get("motion", {})
+        if not settings["enabled"]:
+            return
+        now = time.monotonic()
+        if now - self.motion_gate.last_check < 1 / settings[
+            "check_fps"
+        ] and self.motion_allowed == self.motion_gate.allowed(now):
+            return
+        minimum = self.minimum_seconds()
+        with self.lock:
+            settings = DEFAULT_MOTION | self.config.get("motion", {})
+            window = max(settings["active_seconds"], minimum)
+            allowed = self.motion_gate.observe(
+                frame, self.config["zones"].get("motion", []), settings, now, window
+            )
+            if allowed != self.motion_allowed:
+                self.motion_allowed = allowed
+                self.last_ocr_at = None
+                self.ocr_intervals.clear()
+                self.ocr_times.clear()
+                self.consensus = Consensus()
+                self.capture_epoch += 1
+                self.detections = []

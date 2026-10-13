@@ -223,6 +223,43 @@
        </h2>
        <div class="cameraMetrics" id="extraCameraMetrics">
        </div>
+       <form id="motionSettings">
+        <h3>
+         Oszczędny OCR po zmianie obrazu
+        </h3>
+        <label class="checkboxLabel">
+         <input name="enabled" type="checkbox"/>
+         Uruchamiaj OCR dopiero po zmianie w niebieskim obszarze
+        </label>
+        <div class="settingsFields">
+         <label>
+          Próg zmiany obszaru (%)
+          <input max="100" min="0.1" name="threshold_percent" required="" step="0.1" type="number" value="3"/>
+         </label>
+         <label>
+          Minimalna różnica jasności (1–100)
+          <input max="100" min="1" name="pixel_delta" required="" step="1" type="number" value="20"/>
+         </label>
+         <label>
+          Porównania obrazu / s
+          <input max="10" min="0.5" name="check_fps" required="" step="0.5" type="number" value="3"/>
+         </label>
+         <label>
+          Okno aktywnego OCR (sekundy)
+          <input max="120" min="1" name="active_seconds" required="" step="1" type="number" value="5"/>
+         </label>
+        </div>
+        <p class="muted">
+         Procent oznacza zmienione punkty obrazu w dowolnym niebieskim obszarze. Próg różnicy jasności odrzuca drobny szum. Porównanie używa małych kopii obrazu; OCR nadal korzysta z pełnej klatki. Dalsze zmiany przedłużają okno OCR, a jego minimum dostosowuje się do szybkości analizy, żeby zebrać trzy odczyty. Zielone i czerwone obszary określają wjazd i wyjazd.
+        </p>
+        <p id="motionState" role="status">
+        </p>
+        <button class="primary" id="motionSave">
+         Zapisz tryb zmiany obrazu
+        </button>
+        <p id="motionMessage" role="status">
+        </p>
+       </form>
        <form id="cameraSettings">
         <div class="settingsFields">
          <label>
@@ -405,6 +442,9 @@
       <option value="arrival">
        Zielony — wjazd / parking
       </option>
+      <option value="motion">
+       Niebieski — zmiana obrazu / wyzwalanie OCR
+      </option>
       <option value="departure">
        Czerwony — wyjazd
       </option>
@@ -429,7 +469,7 @@
     </button>
    </div>
    <p>
-    Każde nowe zaznaczenie dodaje obszar. Aby go poprawić lub usunąć, wybierz jego numer. Zielone i czerwone obszary nie mogą się nakładać. Tablica musi zostać potwierdzona w co najmniej 3 klatkach.
+    Każde nowe zaznaczenie dodaje obszar. Niebieskie obszary wyzwalają OCR w trybie oszczędnym i mogą nakładać się na pozostałe kolory. Aby go poprawić lub usunąć, wybierz jego numer. Zielone i czerwone obszary nie mogą się nakładać. Tablica musi zostać potwierdzona w co najmniej 3 klatkach.
    </p>
    <p id="zoneError" role="alert">
    </p>

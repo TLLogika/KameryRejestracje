@@ -100,6 +100,16 @@ Przy limicie 2 analiz/s odstęp pomiędzy pierwszą a trzecią analizą wynosi c
 
 **Stan serwera** pokazuje CPU całej maszyny i osobno CPU aplikacji (100% oznacza jeden zajęty rdzeń, więc aplikacja może przekroczyć 100%). Właściwości kamer pokazują FPS i czas kodowania podglądu, liczbę widzów oraz limit i rzeczywistą szybkość OCR.
 
+## OCR po zmianie obrazu
+
+W **Powiększ / obszary** narysuj i zapisz niebieski obszar. Może nakładać się na zielony lub czerwony; nie zmienia klasyfikacji wjazdu/wyjazdu. Można zapisać do 32 niebieskich obszarów.
+
+Przy nazwie każdej kamery zaznacz **Oszczędny · zmiana obrazu**. Domyślnie tryb jest wyłączony. Dla wybranej kamery w **Ustawienia kamer** ustaw próg zmiany obszaru (%), minimalną różnicę jasności, częstość porównań i okno aktywnego OCR. Zapis działa dla USB, IP i nagrań testowych, bez ponownego otwierania strumienia.
+
+Pierwsza klatka tworzy wzorzec i nie wyzwala OCR. Porównanie używa małych kopii niebieskich obszarów w skali szarości; procent to udział punktów, których jasność różni się od wzorca co najmniej o ustawioną wartość. Próg dotyczy dowolnego niebieskiego obszaru. Drobne zmiany kumulują się względem wzorca, aż przekroczą próg. Po wyzwoleniu powstaje nowy wzorzec; dalsze zmiany przedłużają okno. Gdy scena się uspokoi, OCR wraca do oczekiwania.
+
+Podgląd oraz odczyt kamer pracują dalej. OCR działa tylko w aktywnym oknie i z limitami wydajności; potwierdzenie nadal wymaga trzech różnych klatek. Minimum okna dostosowuje się do zmierzonego czasu analizy i limitu OCR. Ustawienia pokazują bieżący procent i stan. Globalna pauza OCR w ustawieniach wydajności ma pierwszeństwo przed aktywnym oknem. Tryb reaguje na zmianę obrazu, również oświetlenia, nie rozpoznaje samego ruchu pojazdu. Usunięcie ostatniego niebieskiego obszaru wyłącza tryb; pozostałe ustawienia zostają zapisane.
+
 ## Dane i budowa programu
 
 - `data/` — SQLite i cache modeli; `dsecret/` — hasło, hash i konfiguracja; `logi/` — logi.

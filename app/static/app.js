@@ -72,7 +72,8 @@ function zoneGroups(values) {
       [],
     departure: values.departure ? (Array.isArray(values.departure) ? values.departure : [values
       .departure
-    ]) : []
+    ]) : [],
+    motion: values.motion ? (Array.isArray(values.motion) ? values.motion : [values.motion]) : []
   }
 }
 
@@ -94,13 +95,15 @@ function draw(canvas, values, detections = []) {
     for (const [i, z] of list.entries()) {
       ctx.lineWidth = (canvas.id === 'editorCanvas' && kind === $('#zoneKind').value && String(
         i) === zoneSelection ? 4 : 2) * devicePixelRatio;
-      ctx.strokeStyle = kind === 'arrival' ? '#22c96c' : '#f46565';
-      ctx.fillStyle = kind === 'arrival' ? '#22c96c14' : '#f4656514';
+      ctx.strokeStyle = kind === 'arrival' ? '#22c96c' : kind === 'motion' ? '#31bced' : '#f46565';
+      ctx.fillStyle = kind === 'arrival' ? '#22c96c14' : kind === 'motion' ? '#31bced14' :
+        '#f4656514';
       ctx.fillRect(z.x * w, z.y * h, z.w * w, z.h * h);
       ctx.strokeRect(z.x * w, z.y * h, z.w * w, z.h * h);
       ctx.fillStyle = ctx.strokeStyle;
-      ctx.fillText(`${kind==='arrival'?'Z':'C'}${i+1}`, z.x * w + 4 * devicePixelRatio, Math.min(h -
-        4 * devicePixelRatio, z.y * h + 16 * devicePixelRatio))
+      ctx.fillText(`${kind==='arrival'?'Z':kind==='motion'?'N':'C'}${i+1}`, z.x * w + 4 *
+        devicePixelRatio, Math.min(h -
+          4 * devicePixelRatio, z.y * h + 16 * devicePixelRatio))
     }
   }
   ctx.lineWidth = 2 * devicePixelRatio;
@@ -124,7 +127,8 @@ function renderZoneSelect() {
   for (const [i] of list.entries()) {
     const option = document.createElement('option');
     option.value = i;
-    option.textContent = `${$('#zoneKind').value==='arrival'?'Zielony':'Czerwony'} ${i+1}`;
+    option.textContent =
+      `${$('#zoneKind').value==='arrival'?'Zielony':$('#zoneKind').value==='motion'?'Niebieski':'Czerwony'} ${i+1}`;
     select.append(option)
   }
   if (zoneSelection !== 'new' && Number(zoneSelection) >= list.length) zoneSelection = 'new';
@@ -158,11 +162,32 @@ function render() {
       card.className = 'camera';
       card.dataset.id = c.id;
       card.innerHTML =
-        '<header><h2></h2><span class="status"></span></header><div class="stage"><img alt="Podgląd kamery"><canvas></canvas><div class="waiting"></div></div><footer><button class="edit">Powiększ / obszary</button><button class="remove">Usuń kamerę</button></footer>';
+        '<header><div class="cameraHeading"><h2></h2><label class="cameraMotionToggle"><input type="checkbox" class="motionToggle"> Oszczędny · zmiana obrazu</label><small class="cameraMotionState"></small></div><span class="status"></span></header><div class="stage"><img alt="Podgląd kamery"><canvas></canvas><div class="waiting"></div></div><footer><button class="edit">Powiększ / obszary</button><button class="remove">Usuń kamerę</button></footer>';
       grid.append(card);
       if (c.metrics?.preview_enabled !== false) card.querySelector('img').src =
         `/api/cameras/${c.id}/stream`;
       card.querySelector('.edit').onclick = () => openEditor(c.id);
+      card.querySelector('.motionToggle').onchange = async e => {
+        const toggle = e.target,
+          desired = toggle.checked;
+        toggle.dataset.pending = '1';
+        toggle.disabled = true;
+        try {
+          await api(`/cameras/${c.id}/motion`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              enabled: desired
+            })
+          });
+          await refresh();
+        } catch (e) {
+          toggle.checked = !desired;
+          $('#message').textContent = e.message;
+        } finally {
+          delete toggle.dataset.pending;
+          render();
+        }
+      };
       card.querySelector('.remove').onclick = async () => {
         if (confirm('Usunąć tę kamerę z panelu?')) {
           try {
@@ -176,10 +201,21 @@ function render() {
         }
       }
     }
+    card.querySelector('.cameraMotionState').textContent = !c.motion?.enabled ? '' :
+      `${motionActivity(c)} · ${c.metrics?.motion?.changed_percent || 0}%`;
     const image = card.querySelector('img');
     if (c.metrics?.preview_enabled === false) image.removeAttribute('src');
     else if (!image.hasAttribute('src')) image.src = `/api/cameras/${c.id}/stream`;
     card.querySelector('h2').textContent = c.name;
+    const toggle = card.querySelector('.motionToggle');
+    if (!toggle.dataset.pending) {
+      toggle.checked = Boolean(c.motion?.enabled);
+      toggle.disabled = !zoneGroups(c.zones).motion.length && !toggle.checked;
+      toggle.title = toggle.disabled ?
+        'Najpierw narysuj i zapisz niebieski obszar w powiększonym podglądzie' :
+        'OCR po zmianie obrazu w niebieskim obszarze';
+    }
+
     const status = card.querySelector('.status');
     status.textContent = c.status;
     status.classList.toggle('ok', c.status === 'Działa');
@@ -321,7 +357,9 @@ function renderCameraPreferences() {
   if (editing !== c.id) {
     editing = c.id;
     loadCameraSettings(c);
+    fillMotionSettings(c);
   }
+  renderMotionState(c);
   renderCameraMetrics(c);
 }
 $('#settingsCamera').onchange = () => {
@@ -330,6 +368,8 @@ $('#settingsCamera').onchange = () => {
   editing = c.id;
   renderCameraMetrics(c);
   loadCameraSettings(c);
+  fillMotionSettings(c);
+  renderMotionState(c);
 };
 $('#plateFilter').oninput = () => {
   if (parkingData) rows(parkingData)
@@ -571,11 +611,13 @@ $('#clearZone').onclick = () => {
 };
 $('#saveZones').onclick = async () => {
   try {
-    await api(`/cameras/${editing}/zones`, {
+    const result = await api(`/cameras/${editing}/zones`, {
       method: 'PUT',
       body: JSON.stringify(zones)
     });
-    $('#zoneError').textContent = 'Obszary zapisane';
+    $('#zoneError').textContent = result.motion_disabled ?
+      'Obszary zapisane. Tryb oszczędny wyłączony: usunięto niebieskie obszary.' :
+      'Obszary zapisane';
     await refresh()
   } catch (e) {
     $('#zoneError').textContent = e.message
@@ -609,6 +651,9 @@ function renderCameraMetrics(c) {
     ['Potwierdzenia z ≥3 klatek', m.confirmed_reads || 0, m.last_confirmation ?
       `Ostatnio: ${m.last_confirmation.plate}` : 'Oczekiwanie na zgodne odczyty'
     ],
+    ['Tryb zmiany obrazu', c.motion?.enabled ? (m.motion?.active ? 'OCR aktywny' :
+      'Czeka na zmianę') : 'Wyłączony'],
+    ['Zmiana w niebieskim obszarze', `${m.motion?.changed_percent || 0}%`],
     ['FPS zgłoszony przez kamerę', value(m.device_fps)],
     ['FPS podglądu', value(m.preview_fps), `Limit ${value(m.preview_fps_limit)} FPS`],
     ['Widzowie podglądu', m.preview_viewers || 0],
@@ -861,3 +906,64 @@ $('#performanceForm').onsubmit = async e => {
     $('#performanceSave').disabled = false;
   }
 };
+
+
+function fillMotionSettings(c) {
+  const form = $('#motionSettings'),
+    values = c.motion || {
+      enabled: false,
+      threshold_percent: 3,
+      pixel_delta: 20,
+      check_fps: 3,
+      active_seconds: 5
+    };
+  for (const [name, value] of Object.entries(values)) {
+    const input = form.elements.namedItem(name);
+    if (!input) continue;
+    if (input.type === 'checkbox') input.checked = value;
+    else input.value = value;
+  }
+  form.elements.enabled.disabled = !zoneGroups(c.zones).motion.length && !values.enabled;
+  $('#motionMessage').textContent = '';
+}
+
+function renderMotionState(c) {
+  const state = c.metrics?.motion || {},
+    hasRegions = zoneGroups(c.zones).motion.length;
+  $('#motionState').textContent = !hasRegions ?
+    'Najpierw zaznacz niebieski obszar w „Powiększ / obszary”. Może nakładać się na zielony lub czerwony.' :
+    !c.motion?.enabled ? 'Tryb wyłączony — OCR pracuje zgodnie z limitami wydajności.' :
+    `${motionActivity(c)} · zmiana ${state.changed_percent || 0}% · pozostało ${state.remaining_seconds || 0} s · okno co najmniej ${state.effective_seconds || c.motion.active_seconds} s`;
+}
+$('#motionSettings').onsubmit = async e => {
+  e.preventDefault();
+  const id = editing,
+    form = e.target;
+  if (!id) return;
+  const body = {};
+  for (const name of ['enabled', 'threshold_percent', 'pixel_delta', 'check_fps',
+      'active_seconds'
+    ]) {
+    const input = form.elements.namedItem(name);
+    body[name] = input.type === 'checkbox' ? input.checked : Number(input.value);
+  }
+  $('#motionSave').disabled = true;
+  try {
+    await api(`/cameras/${id}/motion`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+    $('#motionMessage').textContent =
+      'Zapisano tryb zmiany obrazu. Nowy wzorzec powstanie z najbliższej klatki.';
+    await refresh();
+  } catch (e) {
+    $('#motionMessage').textContent = e.message;
+  } finally {
+    $('#motionSave').disabled = false;
+  }
+};
+
+function motionActivity(c) {
+  if (c.metrics?.motion?.ocr_enabled === false) return 'OCR wstrzymany globalnie';
+  return c.metrics?.motion?.active ? 'OCR aktywny' : 'Czeka na zmianę obrazu';
+}

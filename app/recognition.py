@@ -52,6 +52,7 @@ def zone_at(zones, x, y):
     hits = {
         name
         for name, value in zones.items()
+        if name in {"arrival", "departure"}
         for r in (value if isinstance(value, list) else [value])
         if r["x"] <= x <= r["x"] + r["w"] and r["y"] <= y <= r["y"] + r["h"]
     }

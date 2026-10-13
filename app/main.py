@@ -1,3 +1,4 @@
+from .motion import MotionSettings, DEFAULT_MOTION
 from .performance import PerformanceSettings, settings_for
 from .permissions import private_mode
 import asyncio
@@ -255,6 +256,7 @@ class Rect(BaseModel):
 class Zones(BaseModel):
     arrival: Rect | list[Rect] | None = None
     departure: Rect | list[Rect] | None = None
+    motion: Rect | list[Rect] | None = None
 
 
 @app.put("/api/cameras/{camera_id}/zones", dependencies=[Depends(auth)])
@@ -277,9 +279,19 @@ def zones(camera_id: int, body: Zones):
                 a["y"], b["y"]
             ) < min(a["y"] + a["h"], b["y"] + b["h"]):
                 raise HTTPException(400, "Zielone i czerwone obszary nie mogą się nakładać")
+    worker = app.state.manager.workers[camera_id]
+    if body.motion is None and worker.config["zones"].get("motion"):
+        values["motion"] = worker.config["zones"]["motion"]
+    motion_disabled = not values.get("motion") and worker.config.get("motion", {}).get(
+        "enabled", False
+    )
     store.zones(camera_id, values)
+    if motion_disabled:
+        store.motion(
+            camera_id, (DEFAULT_MOTION | worker.config.get("motion", {})) | {"enabled": False}
+        )
     app.state.manager.reload()
-    return {"ok": True}
+    return {"ok": True, "motion_disabled": bool(motion_disabled)}
 
 
 @app.delete("/api/cameras/{camera_id}", dependencies=[Depends(auth)])
@@ -426,4 +438,30 @@ def update_performance(body: PerformanceSettings):
     if values["ocr_threads"] > (psutil.cpu_count() or 1):
         raise HTTPException(400, "Liczba wątków przekracza liczbę logicznych CPU maszyny")
     app.state.manager.set_performance(values)
+    return values
+
+
+class MotionInput(BaseModel):
+    enabled: bool | None = None
+    threshold_percent: float | None = Field(default=None, ge=0.1, le=100, allow_inf_nan=False)
+    pixel_delta: int | None = Field(default=None, ge=1, le=100)
+    check_fps: float | None = Field(default=None, ge=0.5, le=10, allow_inf_nan=False)
+    active_seconds: float | None = Field(default=None, ge=1, le=120, allow_inf_nan=False)
+    model_config = {"extra": "forbid"}
+
+
+@app.put("/api/cameras/{camera_id}/motion", dependencies=[Depends(auth)])
+def motion_settings(camera_id: int, body: MotionInput):
+    worker = app.state.manager.workers.get(camera_id)
+    if worker is None:
+        raise HTTPException(404, "Nie ma takiej kamery")
+    values = MotionSettings(
+        **((DEFAULT_MOTION | worker.config.get("motion", {})) | body.model_dump(exclude_none=True))
+    ).model_dump()
+    if values["enabled"] and not worker.config["zones"].get("motion"):
+        raise HTTPException(
+            400, "Najpierw narysuj i zapisz niebieski obszar w powiększonym podglądzie"
+        )
+    store.motion(camera_id, values)
+    app.state.manager.reload()
     return values

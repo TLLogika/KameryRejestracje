@@ -75,6 +75,8 @@ def run_recognition(manager, alpr, test_alpr, threads):
             ):
                 continue
             with worker.lock:
+                if not getattr(worker, "can_analyze", lambda now: True)(time.monotonic()):
+                    continue
                 sequence = worker.sequence
                 capture_epoch = worker.capture_epoch
                 frame = None if worker.frame is None else worker.frame.copy()
@@ -114,6 +116,8 @@ def run_recognition(manager, alpr, test_alpr, threads):
                     zone = zone_at(worker.config["zones"], x, y)
                     if zone:
                         reads.append((result.ocr.text, confidence, x, y, zone))
+                with worker.lock:
+                    worker.ocr_durations.append(inference_end - inference_start)
                 if (
                     worker.stop.is_set()
                     or worker.capture_epoch != capture_epoch
@@ -121,9 +125,10 @@ def run_recognition(manager, alpr, test_alpr, threads):
                 ):
                     continue
                 with worker.lock:
-                    if worker.capture_epoch != capture_epoch:
+                    if worker.capture_epoch != capture_epoch or not getattr(
+                        worker, "can_analyze", lambda now: True
+                    )(time.monotonic()):
                         continue
-                    worker.ocr_durations.append(inference_end - inference_start)
                     if worker.last_ocr_at is not None:
                         worker.ocr_intervals.append(inference_end - worker.last_ocr_at)
                     worker.last_ocr_at = inference_end
