@@ -1,0 +1,6 @@
+# Optional file playback; normal compose ignores existing demo mappings.
+services:
+  panel:
+    environment:
+      TEST_CAMERA_SOURCES_FILE: /app/dsecret/test-cameras.json
+      USB_ROTATION_SECONDS: 0

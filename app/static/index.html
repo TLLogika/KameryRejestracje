@@ -1,5 +1,292 @@
-<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kamery · Parking</title><link rel="stylesheet" href="/assets/style.css"></head><body>
-<section id="login"><form id="loginForm"><div class="brand">◉ PARKING</div><h1>Panel kamer</h1><p>Zaloguj się do maszyny</p><label>Login<input name="username" value="ADMIN" autocomplete="username" required></label><label>Hasło<input name="password" type="password" autocomplete="current-password" required></label><button class="primary">Zaloguj się</button><p id="loginError" role="alert"></p></form></section>
-<div id="dashboard" hidden><aside><div class="brand">◉ PARKING</div><p class="muted">MONITORING REJESTRACJI</p><nav class="viewNav" aria-label="Widok panelu"><button id="camerasView" class="navLink" aria-pressed="true">▦ Kamery</button><button id="databaseView" class="navLink" aria-pressed="false">▤ Baza danych</button></nav><button id="addOpen" class="primary">＋ Dodaj kamerę</button><details id="machine"><summary>▦ Stan serwera</summary><div id="stats"></div></details><div class="asideBottom"><span>ADMIN</span><button id="logout">Wyloguj</button></div></aside><main><header><div><p id="viewEyebrow" class="eyebrow">PODGLĄD NA ŻYWO</p><h1 id="viewTitle">Kamery i parking</h1></div><span id="ocrState" class="pill"></span></header><div id="cameraToolbar" class="toolbar"><span id="cameraCount"></span><div><button id="prev">←</button><span id="page"></span><button id="next">→</button></div></div><div id="grid"></div><section id="databaseTools" hidden><label for="plateFilter">Znajdź rejestrację<input id="plateFilter" type="search" placeholder="Wpisz numer lub jego fragment" autocomplete="off"></label><span id="databaseSource" class="pill"></span><p class="muted">Aktualny parking oraz ostatnie 100 wjazdów i 100 wyjazdów. Dane odświeżają się automatycznie. Rozpoznawanie tablic pracuje w tle.</p></section><section class="parking"><article><h2><i class="green"></i> Przyjazd <span id="arrivalCount" class="rowCount"></span></h2><div id="arrival"></div></article><article><h2><i class="blue"></i> Aktualnie na parkingu <span id="currentCount" class="rowCount"></span></h2><div id="current"></div></article><article><h2><i class="red"></i> Odjazd <span id="departureCount" class="rowCount"></span></h2><div id="departure"></div></article></section><p id="message" role="status"></p></main></div>
-<dialog id="addDialog"><form id="cameraForm"><h2>Dodaj kamerę</h2><label>Nazwa<input name="name" placeholder="Kamera wjazd" required maxlength="80"></label><label>Połączenie<select name="kind" id="kind"><option value="usb">USB podłączone do maszyny</option><option value="ip">Kamera IP</option></select></label><label id="usbLabel">Urządzenie<select id="usbSource"></select></label><label id="ipLabel" hidden>Adres strumienia<input id="ipSource" placeholder="rtsp://camera.example.invalid:554/stream"></label><p class="muted">Dodawanie urządzeń dotyczy serwera, na którym działa panel.</p><p id="cameraError" role="alert"></p><div class="actions"><button type="button" id="addClose">Anuluj</button><button class="primary">Dodaj kamerę</button></div></form></dialog>
-<dialog id="editor"><header><h2 id="editorName"></h2><span id="editorState" class="status"></span><button id="editorClose">Zamknij ✕</button></header><div id="cameraMetrics" class="cameraMetrics"></div><details id="cameraParameters"><summary>Ustawienia kamery i czas aktywności</summary><form id="cameraSettings"><div class="settingsFields"><label>Czas jednej tury USB (sekundy)<input id="rotationSeconds" type="number" min="3" max="120" step="1" required></label><label>Rozdzielczość i format<select id="videoMode"></select></label><label>FPS kamery<select id="videoFps"></select></label></div><p id="settingsHint"></p><button id="settingsSave" class="primary">Zapisz ustawienia kamery</button><p id="settingsMessage" role="status"></p></form></details><div id="editorStage" class="stage"><img id="editorImage" alt="Obraz kamery"><canvas id="editorCanvas"></canvas></div><div class="actions"><label>Rysowany obszar<select id="zoneKind"><option value="arrival">Zielony — wjazd / parking</option><option value="departure">Czerwony — wyjazd</option></select></label><label>Wybrany obszar<select id="zoneSelect"><option value="new">Nowy obszar</option></select></label><button id="addZone">＋ Dodaj obszar</button><button id="clearZone">Usuń wybrany</button><button id="saveZones" class="primary">Zapisz obszary</button></div><p>Każde nowe zaznaczenie dodaje obszar. Aby go poprawić lub usunąć, wybierz jego numer. Zielone i czerwone obszary nie mogą się nakładać. Tablica musi zostać potwierdzona w co najmniej 3 klatkach.</p><p id="zoneError" role="alert"></p></dialog><script src="/assets/app.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="pl">
+ <head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width,initial-scale=1" name="viewport"/>
+  <title>
+   Kamery · Parking
+  </title>
+  <link href="/assets/style.css" rel="stylesheet"/>
+ </head>
+ <body>
+  <section id="login">
+   <form id="loginForm">
+    <div class="brand">
+     ◉ PARKING
+    </div>
+    <h1>
+     Panel kamer
+    </h1>
+    <p>
+     Zaloguj się do maszyny
+    </p>
+    <label>
+     Login
+     <input autocomplete="username" name="username" required="" value="ADMIN"/>
+    </label>
+    <label>
+     Hasło
+     <input autocomplete="current-password" name="password" required="" type="password"/>
+    </label>
+    <button class="primary">
+     Zaloguj się
+    </button>
+    <p id="loginError" role="alert">
+    </p>
+   </form>
+  </section>
+  <div hidden="" id="dashboard">
+   <aside>
+    <div class="brand">
+     ◉ PARKING
+    </div>
+    <p class="muted">
+     MONITORING REJESTRACJI
+    </p>
+    <nav aria-label="Widok panelu" class="viewNav">
+     <button aria-pressed="true" class="navLink" id="camerasView">
+      ▦ Kamery
+     </button>
+     <button aria-pressed="false" class="navLink" id="databaseView">
+      ▤ Baza danych
+     </button>
+    </nav>
+    <button class="primary" id="addOpen">
+     ＋ Dodaj kamerę
+    </button>
+    <details id="advancedSettings">
+     <summary>
+      Ustawienia zaawansowane
+     </summary>
+     <details id="machine">
+      <summary>
+       Stan serwera
+      </summary>
+      <div id="stats">
+      </div>
+     </details>
+    </details>
+    <div class="asideBottom">
+     <span>
+      ADMIN
+     </span>
+     <button id="logout">
+      Wyloguj
+     </button>
+    </div>
+   </aside>
+   <main>
+    <header>
+     <div>
+      <p class="eyebrow" id="viewEyebrow">
+       PODGLĄD NA ŻYWO
+      </p>
+      <h1 id="viewTitle">
+       Kamery i parking
+      </h1>
+     </div>
+     <span class="pill" id="ocrState">
+     </span>
+    </header>
+    <div class="toolbar" id="cameraToolbar">
+     <span id="cameraCount">
+     </span>
+     <div>
+      <button id="prev">
+       ←
+      </button>
+      <span id="page">
+      </span>
+      <button id="next">
+       →
+      </button>
+     </div>
+    </div>
+    <div id="grid">
+    </div>
+    <section hidden="" id="databaseTools">
+     <label for="plateFilter">
+      Znajdź rejestrację
+      <input autocomplete="off" id="plateFilter" placeholder="Wpisz numer lub jego fragment" type="search"/>
+     </label>
+     <span class="pill" id="databaseSource">
+     </span>
+     <p class="muted">
+      Aktualny parking oraz ostatnie 100 wjazdów i 100 wyjazdów. Dane odświeżają się automatycznie. Rozpoznawanie tablic pracuje w tle.
+     </p>
+    </section>
+    <section class="parking">
+     <article>
+      <h2>
+       <i class="green">
+       </i>
+       Przyjazd
+       <span class="rowCount" id="arrivalCount">
+       </span>
+      </h2>
+      <div id="arrival">
+      </div>
+     </article>
+     <article>
+      <h2>
+       <i class="blue">
+       </i>
+       Aktualnie na parkingu
+       <span class="rowCount" id="currentCount">
+       </span>
+      </h2>
+      <div id="current">
+      </div>
+     </article>
+     <article>
+      <h2>
+       <i class="red">
+       </i>
+       Odjazd
+       <span class="rowCount" id="departureCount">
+       </span>
+      </h2>
+      <div id="departure">
+      </div>
+     </article>
+    </section>
+    <p id="message" role="status">
+    </p>
+   </main>
+  </div>
+  <dialog id="addDialog">
+   <form id="cameraForm">
+    <h2>
+     Dodaj kamerę
+    </h2>
+    <label>
+     Nazwa
+     <input maxlength="80" name="name" placeholder="Kamera wjazd" required=""/>
+    </label>
+    <label>
+     Połączenie
+     <select id="kind" name="kind">
+      <option value="usb">
+       USB podłączone do maszyny
+      </option>
+      <option value="ip">
+       Kamera IP
+      </option>
+     </select>
+    </label>
+    <label id="usbLabel">
+     Urządzenie
+     <select id="usbSource">
+     </select>
+    </label>
+    <button id="refreshUsb" type="button">
+     Odśwież listę USB
+    </button>
+    <label hidden="" id="ipLabel">
+     Adres strumienia
+     <input id="ipSource" placeholder="rtsp://camera.example.invalid:554/stream"/>
+    </label>
+    <p class="muted">
+     Dodawanie urządzeń dotyczy serwera, na którym działa panel.
+    </p>
+    <p id="cameraError" role="alert">
+    </p>
+    <div class="actions">
+     <button id="addClose" type="button">
+      Anuluj
+     </button>
+     <button class="primary" id="cameraAddSubmit">
+      Dodaj kamerę
+     </button>
+    </div>
+   </form>
+  </dialog>
+  <dialog id="editor">
+   <header>
+    <h2 id="editorName">
+    </h2>
+    <span class="status" id="editorState">
+    </span>
+    <button id="editorClose">
+     Zamknij ✕
+    </button>
+   </header>
+   <div class="cameraMetrics" id="cameraMetrics">
+   </div>
+   <details id="cameraParameters">
+    <summary>
+     Zaawansowane parametry kamery
+    </summary>
+    <div class="cameraMetrics" id="extraCameraMetrics">
+    </div>
+    <form id="cameraSettings">
+     <div class="settingsFields">
+      <label>
+       Czas jednej tury USB (sekundy)
+       <input id="rotationSeconds" max="120" min="3" required="" step="1" type="number"/>
+      </label>
+      <label>
+       Rozdzielczość i format
+       <select id="videoMode">
+       </select>
+      </label>
+      <label>
+       FPS kamery
+       <select id="videoFps">
+       </select>
+      </label>
+     </div>
+     <p id="settingsHint">
+     </p>
+     <button class="primary" id="settingsSave">
+      Zapisz ustawienia kamery
+     </button>
+     <p id="settingsMessage" role="status">
+     </p>
+    </form>
+   </details>
+   <div class="stage" id="editorStage">
+    <img alt="Obraz kamery" id="editorImage"/>
+    <canvas id="editorCanvas">
+    </canvas>
+   </div>
+   <div class="actions">
+    <label>
+     Rysowany obszar
+     <select id="zoneKind">
+      <option value="arrival">
+       Zielony — wjazd / parking
+      </option>
+      <option value="departure">
+       Czerwony — wyjazd
+      </option>
+     </select>
+    </label>
+    <label>
+     Wybrany obszar
+     <select id="zoneSelect">
+      <option value="new">
+       Nowy obszar
+      </option>
+     </select>
+    </label>
+    <button id="addZone">
+     ＋ Dodaj obszar
+    </button>
+    <button id="clearZone">
+     Usuń wybrany
+    </button>
+    <button class="primary" id="saveZones">
+     Zapisz obszary
+    </button>
+   </div>
+   <p>
+    Każde nowe zaznaczenie dodaje obszar. Aby go poprawić lub usunąć, wybierz jego numer. Zielone i czerwone obszary nie mogą się nakładać. Tablica musi zostać potwierdzona w co najmniej 3 klatkach.
+   </p>
+   <p id="zoneError" role="alert">
+   </p>
+  </dialog>
+  <script src="/assets/app.js">
+  </script>
+ </body>
+</html>

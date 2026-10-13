@@ -76,3 +76,11 @@ Weryfikacja: 23 testy automatyczne; w pomiarze dwóch równoległych nagrań med
 Dodano zakładkę „Baza danych” w lewym menu: przyjazdy, aktualny parking i odjazdy bez obrazów kamer, filtrowanie po rejestracji, liczniki, czas/kamera/pewność odczytu i oznaczenie bazy testowej. Historia obejmuje ostatnie 100 wpisów każdej kategorii. Widok jest zapamiętany przez #database; wejście bezpośrednio po zalogowaniu nie otwiera strumieni. Przełączenie z kamer usuwa źródła obrazów i zamyka transmisję, pozostawiając OCR na serwerze.
 
 Weryfikacja przeglądarką: wyszukiwanie, zero strumieni przy wejściu do bazy, przełączanie kamer, zatrzymanie napływu danych wideo sprawdzone przez Chrome DevTools Protocol, brak ponownego otwarcia podczas odświeżania danych i strony, poprawny widok mobilny oraz brak błędów JavaScript. Kontener zdrowy; kontrola publicznych plików przeszła.
+
+## 2026-10-13 — uproszczenie i Docker na Windowsie
+
+Podstawowy panel obejmuje kamery USB/IP, wiele obszarów, potwierdzenie OCR w trzech różnych klatkach, SQLite, logowanie oraz widoki kamer i bazy. Zaawansowane metryki i ustawienia są zwinięte; naprzemienne USB i nagrania testowe są domyślnie wyłączone. Oddzielono przechwytywanie, OCR, wykrywanie urządzeń i funkcje opcjonalne. Wykrywanie USB odrzuca węzły metadanych, usuwa duplikaty i pokazuje brak uprawnień.
+
+Dodano launcher PowerShell tworzący katalogi i klucz oraz przenośną obsługę uprawnień bind mountów. Klucz integracji pozostaje tylko do odczytu. Opcjonalny mostek Windows udostępnia fizyczne USB kontenerowi przez uwierzytelniony MJPEG; klucz jest w nagłówku, a nie w URL.
+
+Weryfikacja: 34 testy automatyczne, wykonanie launchera w PowerShell z atrapą Dockera, zbudowanie obrazu oraz odizolowany test kontenera z dwoma strumieniami mostka, logowaniem, SQLite, obszarami, przeglądarką i trwałością po restarcie. Test przenośnych uprawnień obejmował klucz zamontowany tylko do odczytu. Fizyczne urządzenia i sterowniki USB na Windowsie wymagają sprawdzenia na komputerze Windows; próba mostka używała syntetycznych klatek. Usługi na portach 8080 i 9000 pozostawiono działające, parking na 10000 wyłączony.
