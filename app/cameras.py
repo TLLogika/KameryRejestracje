@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import threading
 import cv2
+from .performance import PerformanceSettings, settings_for
 from .capture import Worker
 from .devices import usb_devices
 from .optional.usb_rotation import UsbTurns
@@ -17,6 +18,7 @@ class Manager:
     def __init__(self, store):
         self.store = store
         cv2.setNumThreads(1)
+        self.performance = PerformanceSettings(**store.preference("performance", {})).model_dump()
         self.workers = {}
         self.stop = threading.Event()
         self.usb_rotation_seconds = float(os.environ.get("USB_ROTATION_SECONDS", "0"))
@@ -65,10 +67,12 @@ class Manager:
 
     def record_confirmation(self, worker, plate, zone, confidence):
         with worker.lock:
+            if not settings_for(self)["ocr_enabled"]:
+                return False
             worker.confirmed_reads += 1
             worker.last_confirmation = {"plate": plate, "zone": zone, "confidence": confidence}
-        destination = self.test_store if worker.test_video else self.store
-        return destination.transition(plate, zone, worker.config["id"], confidence)
+            destination = self.test_store if worker.test_video else self.store
+            return destination.transition(plate, zone, worker.config["id"], confidence)
 
     def parking_store(self):
         if self.test_store and self.workers and all(w.test_video for w in self.workers.values()):
@@ -113,3 +117,24 @@ class Manager:
             self.usb_rotation_seconds = 5 if enabled else 0
             self.store.set_preference("usb_rotation_enabled", enabled)
             self._reload()
+
+    def set_performance(self, values):
+        with self.config_lock:
+            changed_ocr = any(
+                self.performance[key] != values[key]
+                for key in ("ocr_enabled", "ocr_fps", "ocr_threads")
+            )
+            self.store.set_preference("performance", values)
+            self.performance = values
+            for worker in self.workers.values():
+                with worker.lock:
+                    if changed_ocr:
+                        worker.consensus = Consensus()
+                        worker.capture_epoch += 1
+                        worker.detections = []
+                        worker.ocr_times.clear()
+                        worker.ocr_intervals.clear()
+                        worker.ocr_durations.clear()
+                        worker.last_ocr_at = None
+                    if not values["preview_enabled"]:
+                        worker.jpeg = None

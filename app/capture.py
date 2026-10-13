@@ -6,6 +6,7 @@ import math
 import threading
 import time
 import cv2
+from .performance import settings_for
 from .recognition import Consensus
 from .usb_bridge import BridgeCapture
 from .video_settings import DEFAULT_SETTINGS, MIN_ROTATION_SECONDS
@@ -20,6 +21,11 @@ class Worker:
         self.stop = threading.Event()
         self.lock = threading.Lock()
         self.frame = self.jpeg = None
+        self.preview_viewers = 0
+        self.preview_sequence = 0
+        self.preview_times = deque(maxlen=300)
+        self.preview_durations = deque(maxlen=120)
+        self.last_preview_at = 0
         self.sequence = 0
         self.capture_epoch = 0
         self.reconfigure = threading.Event()
@@ -60,7 +66,8 @@ class Worker:
         def p95(values):
             return sorted(values)[max(0, math.ceil(0.95 * len(values)) - 1)] if values else 0
 
-        cycle = max(p95(intervals), p95(durations) + 0.25)
+        performance = settings_for(getattr(self, "manager", None))
+        cycle = max(p95(intervals), p95(durations) + 0.25, 1 / performance["ocr_fps"])
         return max(MIN_ROTATION_SECONDS, math.ceil(4 * cycle + 0.5))
 
     def snapshot(self):
@@ -96,7 +103,31 @@ class Worker:
                     "format": self.device_format,
                     "capture_fps": self._rate(self.capture_times) if live else 0,
                     "last_capture_fps": self._rate(self.capture_times),
-                    "ocr_fps": self._rate(self.ocr_times) if live else 0,
+                    "ocr_fps": (
+                        self._rate(self.ocr_times)
+                        if live and settings_for(self.manager)["ocr_enabled"]
+                        else 0
+                    ),
+                    "preview_enabled": settings_for(self.manager)["preview_enabled"],
+                    "preview_fps": (
+                        self._rate(getattr(self, "preview_times", []))
+                        if live
+                        and settings_for(self.manager)["preview_enabled"]
+                        and (
+                            getattr(self, "preview_viewers", 0)
+                            or not settings_for(self.manager)["preview_on_demand"]
+                        )
+                        else 0
+                    ),
+                    "preview_viewers": getattr(self, "preview_viewers", 0),
+                    "preview_frames": getattr(self, "preview_sequence", 0),
+                    "preview_ms": (
+                        round(sum(self.preview_durations) / len(self.preview_durations) * 1000, 1)
+                        if getattr(self, "preview_durations", None)
+                        else None
+                    ),
+                    "preview_fps_limit": settings_for(self.manager)["preview_fps"],
+                    "ocr_fps_limit": settings_for(self.manager)["ocr_fps"],
                     "last_ocr_fps": self._rate(self.ocr_times),
                     "ocr_ms": (
                         round(sum(self.ocr_durations) / len(self.ocr_durations) * 1000, 1)
@@ -194,26 +225,13 @@ class Worker:
                         raise RuntimeError("Brak obrazu")
                     if rotating and deadline is None:
                         deadline = time.monotonic() + settings["rotation_seconds"]
-                    preview = frame
-                    if frame.shape[1] > 1280:
-                        factor = math.ceil(frame.shape[1] / 1280)
-                        preview = cv2.resize(
-                            frame,
-                            (frame.shape[1] // factor, frame.shape[0] // factor),
-                            interpolation=cv2.INTER_AREA,
-                        )
-                    ok, jpeg = cv2.imencode(".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                    self.encode_preview(frame)
                     with self.lock:
                         self.frame = frame
-                        self.jpeg = jpeg.tobytes() if ok else None
                         self.sequence += 1
                         self.capture_times.append(time.monotonic())
                         self.last_frame_at = self.capture_times[-1]
                         self.actual_resolution = {"width": frame.shape[1], "height": frame.shape[0]}
-                        self.preview_resolution = {
-                            "width": preview.shape[1],
-                            "height": preview.shape[0],
-                        }
                         self.turn_deadline = deadline
                         self.status = "Działa"
                     if self.test_video:
@@ -244,3 +262,42 @@ class Worker:
                 if rotating:
                     self.manager.usb_turns.release(self.config["id"])
             self.stop.wait(3 if failed else 0.05)
+
+    def watch_preview(self, delta):
+        with self.lock:
+            self.preview_viewers = max(0, self.preview_viewers + delta)
+            if self.preview_viewers == 0:
+                self.preview_times.clear()
+
+    def encode_preview(self, frame):
+        performance = settings_for(self.manager)
+        now = time.monotonic()
+        with self.lock:
+            if not performance["preview_enabled"] or (
+                performance["preview_on_demand"] and not self.preview_viewers
+            ):
+                return
+            if now - self.last_preview_at < 1 / performance["preview_fps"]:
+                return
+        start = time.monotonic()
+        preview = frame
+        factor = max(1, math.ceil(frame.shape[1] / performance["preview_width"]))
+        if factor > 1:
+            preview = cv2.resize(
+                frame,
+                (frame.shape[1] // factor, frame.shape[0] // factor),
+                interpolation=cv2.INTER_AREA,
+            )
+        ok, jpeg = cv2.imencode(
+            ".jpg", preview, [cv2.IMWRITE_JPEG_QUALITY, performance["jpeg_quality"]]
+        )
+        finished = time.monotonic()
+        with self.lock:
+            if not settings_for(self.manager)["preview_enabled"]:
+                return
+            self.last_preview_at = now
+            self.preview_durations.append(finished - start)
+            self.preview_times.append(finished)
+            self.jpeg = jpeg.tobytes() if ok else None
+            self.preview_sequence += 1
+            self.preview_resolution = {"width": preview.shape[1], "height": preview.shape[0]}

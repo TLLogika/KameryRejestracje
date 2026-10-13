@@ -83,6 +83,23 @@ Lista kamer filtruje węzły metadanych, odróżnia urządzenia fizyczne i prefe
 
 Kamery domyślnie działają równocześnie. **Podmiana starych kamer na nagrania i przełączanie USB są domyślnie wyłączone**, także gdy w katalogu znajdują się stare nagrania lub pliki próby.
 
+## Wydajność i CPU
+
+W **Ustawienia kamer → Wydajność i zużycie CPU** są trzy profile oraz ręczne ustawienia. Nowe wdrożenia i wdrożenia bez zapisanych ustawień wydajności zaczynają od oszczędnego: podgląd 5 FPS / maks. 640 px / JPEG 55, do 2 analiz OCR/s na kamerę i jeden wątek analizy.
+
+| Opcja | Co zmienia |
+| --- | --- |
+| Limit FPS, szerokość i jakość JPEG | Koszt skalowania/kodowania oraz transmisję podglądu; OCR zachowuje pełną klatkę. |
+| Podgląd tylko dla aktywnych widzów | Domyślnie włączone. Bez otwartych strumieni serwer nie tworzy JPEG; kamery i OCR nadal pracują. JPEG jest współdzielony przez wszystkich widzów danej kamery. |
+| Włącz podgląd | Pozwala wyłączyć cały podgląd, zachowując analizę. |
+| Maksimum analiz/s na kamerę | Ogranicza liczbę uruchomień OCR. Rzeczywista szybkość może być niższa; trzy zgodne odczyty w różnych klatkach nadal są wymagane. |
+| Wątki CPU analizy | 1–8, nie więcej niż logicznych CPU. Zmiana przeładowuje modele, chwilowo zatrzymując OCR; kamery pozostają aktywne. |
+| Włącz rozpoznawanie | Pauza OCR i nowych zdarzeń bez usuwania bazy; pozwala także porównać zużycie CPU z samym obrazem. |
+
+Przy limicie 2 analiz/s odstęp pomiędzy pierwszą a trzecią analizą wynosi co najmniej 1 s. Przy szybkim przejeździe zwiększ limit. Ustawienia są trwałe i dotyczą wszystkich kamer. Limit OCR nie jest limitem procentowym CPU. Kamera IP może nadal wymagać dekodowania całego strumienia: rozdzielczość/FPS źródła zmień w kamerze, a dla USB użyj wyboru parametrów poniżej.
+
+**Stan serwera** pokazuje CPU całej maszyny i osobno CPU aplikacji (100% oznacza jeden zajęty rdzeń, więc aplikacja może przekroczyć 100%). Właściwości kamer pokazują FPS i czas kodowania podglądu, liczbę widzów oraz limit i rzeczywistą szybkość OCR.
+
 ## Dane i budowa programu
 
 - `data/` — SQLite i cache modeli; `dsecret/` — hasło, hash i konfiguracja; `logi/` — logi.

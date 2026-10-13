@@ -89,6 +89,113 @@
     <section hidden="" id="cameraPreferences">
      <article class="settingsCard">
       <h2>
+       Wydajność i zużycie CPU
+      </h2>
+      <p class="muted">
+       Ustawienia dotyczą wszystkich kamer. Odczyt obrazu i OCR działają niezależnie od podglądu.
+      </p>
+      <div class="actions" id="performanceProfiles">
+       <button data-profile="eco" type="button">
+        Oszczędność CPU
+       </button>
+       <button data-profile="balanced" type="button">
+        Zrównoważony
+       </button>
+       <button data-profile="smooth" type="button">
+        Płynny podgląd
+       </button>
+      </div>
+      <form id="performanceForm">
+       <fieldset disabled="" id="performanceFields">
+        <h3>
+         Podgląd
+        </h3>
+        <label class="checkboxLabel">
+         <input checked="" name="preview_enabled" type="checkbox"/>
+         Włącz podgląd kamer
+        </label>
+        <label class="checkboxLabel">
+         <input checked="" name="preview_on_demand" type="checkbox"/>
+         Przygotowuj podgląd tylko dla aktywnych widzów
+        </label>
+        <div class="settingsFields">
+         <label>
+          Limit FPS podglądu
+          <input max="30" min="1" name="preview_fps" required="" step="1" type="number" value="5"/>
+         </label>
+         <label>
+          Maksymalna szerokość podglądu
+          <select name="preview_width">
+           <option value="320">
+            320 px
+           </option>
+           <option selected="" value="640">
+            640 px
+           </option>
+           <option value="960">
+            960 px
+           </option>
+           <option value="1280">
+            1280 px
+           </option>
+           <option value="1920">
+            1920 px
+           </option>
+          </select>
+         </label>
+         <label>
+          Jakość JPEG (30–90)
+          <input max="90" min="30" name="jpeg_quality" required="" step="1" type="number" value="55"/>
+         </label>
+        </div>
+        <p class="muted">
+         Mniejsze obrazy i niższe FPS zmniejszają koszt podglądu oraz transmisję. OCR nadal dostaje pełną klatkę. Bez widzów nie powstają JPEG, gdy zaznaczona jest opcja powyżej.
+        </p>
+        <h3>
+         Analiza OCR
+        </h3>
+        <label class="checkboxLabel">
+         <input checked="" name="ocr_enabled" type="checkbox"/>
+         Włącz rozpoznawanie i zapis nowych zdarzeń
+        </label>
+        <div class="settingsFields">
+         <label>
+          Maksimum analiz/s na kamerę
+          <input max="15" min="0.5" name="ocr_fps" required="" step="0.5" type="number" value="2"/>
+         </label>
+         <label>
+          Wątki CPU analizy
+          <select name="ocr_threads">
+           <option value="1">
+            1
+           </option>
+           <option value="2">
+            2
+           </option>
+           <option value="4">
+            4
+           </option>
+           <option value="8">
+            8
+           </option>
+          </select>
+         </label>
+        </div>
+        <p class="muted" id="performanceHint">
+        </p>
+        <p class="muted">
+         Pauza OCR zatrzymuje nowe odczyty i zdarzenia, zachowując bazę oraz podgląd. Zmiana liczby wątków przeładowuje modele OCR; pozostałe opcje stosują się na bieżąco. Limit jest maksimum, nie gwarancją szybkości ani twardym limitem procentowym CPU. Parametry źródła USB ustawisz niżej, a IP — w kamerze.
+        </p>
+        <button class="primary" id="performanceSave">
+         Zapisz wydajność
+        </button>
+        <p id="performanceMessage" role="status">
+        </p>
+       </fieldset>
+      </form>
+     </article>
+     <article class="settingsCard">
+      <h2>
        Przełączanie kamer USB
       </h2>
       <label class="checkboxLabel">
@@ -283,6 +390,9 @@
    </header>
    <div class="cameraMetrics" id="cameraMetrics">
    </div>
+   <p class="muted" hidden="" id="editorPreviewNotice">
+    Podgląd został wyłączony w ustawieniach wydajności. Rozpoznawanie działa według ustawień OCR.
+   </p>
    <div class="stage" id="editorStage">
     <img alt="Obraz kamery" id="editorImage"/>
     <canvas id="editorCanvas">

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import time
 import numpy as np
+from .performance import settings_for, analysis_due
 from .recognition import zone_at
 from .frame_geometry import crop_for_analysis
 
@@ -12,49 +13,67 @@ logger = logging.getLogger(__name__)
 
 
 def recognize(manager):
-    try:
-        from fast_alpr import ALPR
-
-        cache = os.environ.get("ALPR_CACHE_DIR")
-        if cache:
-            from open_image_models.detection.core import hub as detector_hub
-            from fast_plate_ocr.inference import hub as ocr_hub
-
-            detector_hub.MODEL_CACHE_DIR = Path(cache) / "open-image-models"
-            ocr_hub.MODEL_CACHE_DIR = Path(cache) / "fast-plate-ocr"
-        import onnxruntime as ort
-
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = 2
-        options.inter_op_num_threads = 1
-        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        options.add_session_config_entry("session.inter_op.allow_spinning", "0")
-        alpr = ALPR(
-            detector_model="yolo-v9-t-384-license-plate-end2end",
-            ocr_model="cct-xs-v2-global-model",
-            detector_providers=["CPUExecutionProvider"],
-            ocr_providers=["CPUExecutionProvider"],
-            detector_sess_options=options,
-            ocr_sess_options=options,
-        )
-        test_alpr = (
-            ALPR(
-                detector_model="yolo-v9-t-256-license-plate-end2end",
-                ocr=alpr.ocr,
-                detector_providers=["CPUExecutionProvider"],
-                detector_sess_options=options,
-            )
-            if manager.test_store
-            else alpr
-        )
-        manager.ocr_status = "Działa"
-    except Exception as exc:
-        manager.ocr_status = "Błąd ładowania modeli — sprawdź log"
-        logger.exception("Nie udało się załadować ALPR")
-        return
-    processed = {}
     while not manager.stop.is_set():
+        threads = settings_for(manager)["ocr_threads"]
+        try:
+            manager.ocr_status = "Ładowanie modeli"
+            alpr, test_alpr = load_models(threads)
+        except Exception:
+            manager.ocr_status = "Błąd ładowania modeli — sprawdź log"
+            logger.exception("Nie udało się załadować ALPR")
+            return
+        run_recognition(manager, alpr, test_alpr, threads)
+
+
+def load_models(threads):
+    from fast_alpr import ALPR
+
+    cache = os.environ.get("ALPR_CACHE_DIR")
+    if cache:
+        from open_image_models.detection.core import hub as detector_hub
+        from fast_plate_ocr.inference import hub as ocr_hub
+
+        detector_hub.MODEL_CACHE_DIR = Path(cache) / "open-image-models"
+        ocr_hub.MODEL_CACHE_DIR = Path(cache) / "fast-plate-ocr"
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = threads
+    options.inter_op_num_threads = 1
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+    alpr = ALPR(
+        detector_model="yolo-v9-t-384-license-plate-end2end",
+        ocr_model="cct-xs-v2-global-model",
+        detector_providers=["CPUExecutionProvider"],
+        ocr_providers=["CPUExecutionProvider"],
+        detector_sess_options=options,
+        ocr_sess_options=options,
+    )
+    test_alpr = ALPR(
+        detector_model="yolo-v9-t-256-license-plate-end2end",
+        ocr=alpr.ocr,
+        detector_providers=["CPUExecutionProvider"],
+        detector_sess_options=options,
+    )
+    return alpr, test_alpr
+
+
+def run_recognition(manager, alpr, test_alpr, threads):
+    processed = {}
+    last_started = {}
+    while not manager.stop.is_set() and settings_for(manager)["ocr_threads"] == threads:
+        performance = settings_for(manager)
+        manager.ocr_status = "Działa" if performance["ocr_enabled"] else "Wstrzymany w ustawieniach"
+        if not performance["ocr_enabled"]:
+            manager.stop.wait(0.1)
+            continue
         for key, worker in list(manager.workers.items()):
+            performance = settings_for(manager)
+            if not analysis_due(
+                performance, time.monotonic(), last_started.get(key, -float("inf"))
+            ):
+                continue
             with worker.lock:
                 sequence = worker.sequence
                 capture_epoch = worker.capture_epoch
@@ -62,6 +81,7 @@ def recognize(manager):
             if frame is None or processed.get(key) == sequence:
                 continue
             processed[key] = sequence
+            last_started[key] = time.monotonic()
             try:
                 h, w = frame.shape[:2]
                 reads, boxes = [], []
@@ -94,7 +114,11 @@ def recognize(manager):
                     zone = zone_at(worker.config["zones"], x, y)
                     if zone:
                         reads.append((result.ocr.text, confidence, x, y, zone))
-                if worker.stop.is_set() or worker.capture_epoch != capture_epoch:
+                if (
+                    worker.stop.is_set()
+                    or worker.capture_epoch != capture_epoch
+                    or not settings_for(manager)["ocr_enabled"]
+                ):
                     continue
                 with worker.lock:
                     if worker.capture_epoch != capture_epoch:
@@ -103,10 +127,10 @@ def recognize(manager):
                     if worker.last_ocr_at is not None:
                         worker.ocr_intervals.append(inference_end - worker.last_ocr_at)
                     worker.last_ocr_at = inference_end
-                    worker.ocr_times.append(inference_end)
+                    worker.ocr_times.append(inference_start)
                     worker.detections = boxes
                 for plate, zone, confidence in worker.consensus.frame(reads):
                     manager.record_confirmation(worker, plate, zone, confidence)
             except Exception:
                 logger.exception("Błąd rozpoznawania kamery %s", key)
-        manager.stop.wait(0.005)
+        manager.stop.wait(0.02)

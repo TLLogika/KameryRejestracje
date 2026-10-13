@@ -1,3 +1,4 @@
+from .performance import PerformanceSettings, settings_for
 from .permissions import private_mode
 import asyncio
 import hashlib
@@ -297,23 +298,29 @@ async def stream(camera_id: int, request: Request, token=Depends(auth)):
     async def frames():
         previous = -1
         current = worker
-        while sessions.get(token, 0) > time.time():
-            if await request.is_disconnected():
-                return
-            next_worker = app.state.manager.workers.get(camera_id)
-            if next_worker is None:
-                if camera_id not in {c["id"] for c in store.cameras()}:
+        current.watch_preview(1)
+        try:
+            while sessions.get(token, 0) > time.time():
+                if await request.is_disconnected():
                     return
-                await asyncio.sleep(0.05)
-                continue
-            if current is not next_worker:
-                current, previous = next_worker, -1
-            with current.lock:
-                jpeg, sequence = current.jpeg, current.sequence
-            if jpeg and sequence != previous:
-                previous = sequence
-                yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-            await asyncio.sleep(0.025)
+                next_worker = app.state.manager.workers.get(camera_id)
+                if next_worker is None:
+                    if camera_id not in {c["id"] for c in store.cameras()}:
+                        return
+                    await asyncio.sleep(0.05)
+                    continue
+                if current is not next_worker:
+                    current.watch_preview(-1)
+                    current, previous = next_worker, -1
+                    current.watch_preview(1)
+                with current.lock:
+                    jpeg, sequence = current.jpeg, current.preview_sequence
+                if jpeg and sequence != previous:
+                    previous = sequence
+                    yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                await asyncio.sleep(0.025)
+        finally:
+            current.watch_preview(-1)
 
     return StreamingResponse(frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
@@ -342,6 +349,7 @@ def machine_parking():
 
 process = psutil.Process()
 psutil.cpu_percent()
+process.cpu_percent()
 
 
 @app.get("/api/server", dependencies=[Depends(auth)])
@@ -364,6 +372,7 @@ def server():
         "temperature": max(readings) if readings else None,
         "load": os.getloadavg(),
         "process_ram": process.memory_info().rss,
+        "process_cpu": process.cpu_percent(),
         "cpu_threads": psutil.cpu_count(),
         "ocr": app.state.manager.ocr_status,
     }
@@ -404,3 +413,17 @@ def update_camera_switching(body: RotationInput):
     except RuntimeError as exc:
         raise HTTPException(409, str(exc))
     return {"enabled": app.state.manager.usb_rotation_seconds > 0}
+
+
+@app.get("/api/performance", dependencies=[Depends(auth)])
+def performance_settings():
+    return settings_for(app.state.manager)
+
+
+@app.put("/api/performance", dependencies=[Depends(auth)])
+def update_performance(body: PerformanceSettings):
+    values = body.model_dump()
+    if values["ocr_threads"] > (psutil.cpu_count() or 1):
+        raise HTTPException(400, "Liczba wątków przekracza liczbę logicznych CPU maszyny")
+    app.state.manager.set_performance(values)
+    return values

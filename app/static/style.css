@@ -657,3 +657,17 @@ aside>.primary {
         margin-top: 18px;
     }
 }
+
+#performanceFields {
+    border: 0;
+    padding: 0;
+    margin: 0;
+    min-width: 0;
+}
+
+#performanceProfiles { justify-content: flex-start; flex-wrap: wrap; }
+#performanceForm .checkboxLabel input { flex-shrink: 0; }
+@media (max-width: 760px) {
+    #ocrState { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+    .cameraMetrics .metric strong { overflow-wrap: anywhere; }
+}

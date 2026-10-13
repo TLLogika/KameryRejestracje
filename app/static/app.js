@@ -9,7 +9,7 @@ let csrf = '',
   zoneSelection = 'new',
   zoneDraft = null;
 let currentView = ['database', 'settings'].includes(location.hash.slice(1)) ? location.hash.slice(
-  1) : 'cameras',
+    1) : 'cameras',
   parkingData = null;
 async function api(path, options = {}) {
   const r = await fetch('/api' + path, {
@@ -160,7 +160,8 @@ function render() {
       card.innerHTML =
         '<header><h2></h2><span class="status"></span></header><div class="stage"><img alt="Podgląd kamery"><canvas></canvas><div class="waiting"></div></div><footer><button class="edit">Powiększ / obszary</button><button class="remove">Usuń kamerę</button></footer>';
       grid.append(card);
-      card.querySelector('img').src = `/api/cameras/${c.id}/stream`;
+      if (c.metrics?.preview_enabled !== false) card.querySelector('img').src =
+        `/api/cameras/${c.id}/stream`;
       card.querySelector('.edit').onclick = () => openEditor(c.id);
       card.querySelector('.remove').onclick = async () => {
         if (confirm('Usunąć tę kamerę z panelu?')) {
@@ -175,14 +176,19 @@ function render() {
         }
       }
     }
+    const image = card.querySelector('img');
+    if (c.metrics?.preview_enabled === false) image.removeAttribute('src');
+    else if (!image.hasAttribute('src')) image.src = `/api/cameras/${c.id}/stream`;
     card.querySelector('h2').textContent = c.name;
     const status = card.querySelector('.status');
     status.textContent = c.status;
     status.classList.toggle('ok', c.status === 'Działa');
     status.classList.toggle('paused', c.status.startsWith('Wstrzymana'));
     card.querySelector('.waiting').classList.toggle('paused', c.status.startsWith('Wstrzymana'));
-    card.querySelector('.waiting').hidden = c.status === 'Działa';
-    card.querySelector('.waiting').textContent = c.status;
+    card.querySelector('.waiting').hidden = c.status === 'Działa' && c.metrics?.preview_enabled !==
+      false;
+    card.querySelector('.waiting').textContent = c.metrics?.preview_enabled === false ?
+      'Podgląd wyłączony w ustawieniach' : c.status;
     draw(card.querySelector('canvas'), c.zones, c.detections)
   }
 }
@@ -258,6 +264,7 @@ function setView(view, changeHash = true) {
   if (csrf) {
     render();
     refresh();
+    if (settings) loadPerformance();
     if (settings) api('/camera-switching').then(data => {
       $('#rotationEnabled').checked = data.enabled;
     }).catch(e => $('#rotationMessage').textContent = e.message);
@@ -330,6 +337,9 @@ $('#plateFilter').oninput = () => {
 window.addEventListener('hashchange', () => setView(location.hash.slice(1), false));
 
 function stats(data) {
+  availableCpuThreads = data.cpu_threads || 1;
+  for (const option of $('#performanceForm').elements.ocr_threads.options) option.disabled = Number(
+    option.value) > availableCpuThreads;
   $('#databaseSource').textContent = data.test_mode ? 'Baza testowa' : 'Baza parkingu';
   $('#ocrState').textContent = 'Odczyt tablic: ' + data.ocr + (data.test_mode ?
     ' · TEST — osobna baza parkingu' : '');
@@ -345,6 +355,7 @@ function stats(data) {
     ],
     ['Load average 1 / 5 / 15 min', data.load.map(v => v.toFixed(2)).join(' / ')],
     ['RAM procesu kamer', `${mb(data.process_ram)} MB`],
+    ['CPU aplikacji · 100% = 1 rdzeń', `${(data.process_cpu || 0).toFixed(1)}%`],
     ['Wątki CPU', data.cpu_threads]
   ];
   $('#stats').replaceChildren();
@@ -458,6 +469,10 @@ function updateEditorState() {
   el.textContent = c.status;
   el.classList.toggle('ok', c.status === 'Działa');
   el.classList.toggle('paused', c.status.startsWith('Wstrzymana'));
+  $('#editorPreviewNotice').hidden = c.metrics?.preview_enabled !== false;
+  if (c.metrics?.preview_enabled === false) $('#editorImage').removeAttribute('src');
+  else if (!$('#editorImage').hasAttribute('src')) $('#editorImage').src =
+    `/api/cameras/${c.id}/stream`;
   renderCameraMetrics(c)
 }
 
@@ -469,7 +484,8 @@ function openEditor(id) {
   zoneDraft = null;
   start = null;
   $('#editorName').textContent = c.name;
-  $('#editorImage').src = `/api/cameras/${id}/stream`;
+  if (c.metrics?.preview_enabled !== false) $('#editorImage').src = `/api/cameras/${id}/stream`;
+  else $('#editorImage').removeAttribute('src');
   $('#zoneError').textContent = '';
   $('#editor').showModal();
   updateEditorState();
@@ -594,6 +610,10 @@ function renderCameraMetrics(c) {
       `Ostatnio: ${m.last_confirmation.plate}` : 'Oczekiwanie na zgodne odczyty'
     ],
     ['FPS zgłoszony przez kamerę', value(m.device_fps)],
+    ['FPS podglądu', value(m.preview_fps), `Limit ${value(m.preview_fps_limit)} FPS`],
+    ['Widzowie podglądu', m.preview_viewers || 0],
+    ['Kodowanie podglądu', value(m.preview_ms, ' ms')],
+    ['Limit OCR / sekundę', value(m.ocr_fps_limit)],
     ['FPS przechwytywania', value(m.capture_fps), c.status === 'Działa' ? 'Na żywo' :
       `Pauza; ostatnio ${value(m.last_capture_fps)} FPS`
     ],
@@ -722,5 +742,122 @@ $('#cameraSettings').onsubmit = async e => {
     $('#settingsMessage').textContent = e.message
   } finally {
     $('#settingsSave').disabled = false
+  }
+};
+
+
+let availableCpuThreads = 8;
+const performancePresets = {
+  eco: {
+    preview_enabled: true,
+    preview_on_demand: true,
+    preview_fps: 5,
+    preview_width: 640,
+    jpeg_quality: 55,
+    ocr_enabled: true,
+    ocr_fps: 2,
+    ocr_threads: 1
+  },
+  balanced: {
+    preview_enabled: true,
+    preview_on_demand: true,
+    preview_fps: 10,
+    preview_width: 960,
+    jpeg_quality: 70,
+    ocr_enabled: true,
+    ocr_fps: 4,
+    ocr_threads: 2
+  },
+  smooth: {
+    preview_enabled: true,
+    preview_on_demand: true,
+    preview_fps: 20,
+    preview_width: 1280,
+    jpeg_quality: 80,
+    ocr_enabled: true,
+    ocr_fps: 8,
+    ocr_threads: 2
+  }
+};
+
+function performanceHint() {
+  const form = $('#performanceForm'),
+    fps = Number(form.elements.ocr_fps.value);
+  $('#performanceHint').textContent =
+    `Potwierdzenie nadal wymaga 3 różnych klatek. Przy tym limicie odstęp między pierwszą i trzecią analizą wynosi co najmniej ${(2 / fps).toFixed(1)} s; wolniejszy sprzęt może go wydłużyć. Przy szybkich przejazdach zwiększ limit OCR.`;
+}
+
+function fillPerformance(data) {
+  const form = $('#performanceForm');
+  for (const [name, value] of Object.entries(data)) {
+    const input = form.elements.namedItem(name);
+    if (!input) continue;
+    if (input.type === 'checkbox') input.checked = value;
+    else {
+      if (input.tagName === 'SELECT' && ![...input.options].some(o => Number(o.value) === Number(
+          value))) {
+        const option = new Option(String(value), String(value));
+        input.add(option);
+      }
+      input.value = value;
+    }
+  }
+  performanceHint();
+}
+let performanceLoad = 0;
+async function loadPerformance() {
+  const requestId = ++performanceLoad;
+  $('#performanceFields').disabled = true;
+  for (const button of $('#performanceProfiles').querySelectorAll('button')) button.disabled =
+    true;
+  $('#performanceMessage').textContent = 'Wczytywanie ustawień…';
+  try {
+    const data = await api('/performance');
+    if (requestId !== performanceLoad) return;
+    fillPerformance(data);
+    $('#performanceMessage').textContent = '';
+  } catch (e) {
+    if (requestId === performanceLoad) $('#performanceMessage').textContent = e.message;
+  } finally {
+    if (requestId === performanceLoad) {
+      $('#performanceFields').disabled = false;
+      for (const button of $('#performanceProfiles').querySelectorAll('button')) button.disabled =
+        false;
+    }
+  }
+}
+$('#performanceProfiles').onclick = e => {
+  const button = e.target.closest('[data-profile]');
+  if (!button) return;
+  const preset = performancePresets[button.dataset.profile];
+  fillPerformance({
+    ...preset,
+    ocr_threads: Math.min(preset.ocr_threads, availableCpuThreads)
+  });
+  $('#performanceMessage').textContent =
+    'Wybrano profil. Kliknij „Zapisz wydajność”, aby zastosować.';
+};
+$('#performanceForm').oninput = performanceHint;
+$('#performanceForm').onsubmit = async e => {
+  e.preventDefault();
+  const form = e.target,
+    body = {};
+  for (const name of Object.keys(performancePresets.eco)) {
+    const input = form.elements.namedItem(name);
+    body[name] = input.type === 'checkbox' ? input.checked : Number(input.value);
+  }
+  $('#performanceSave').disabled = true;
+  try {
+    fillPerformance(await api('/performance', {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    }));
+    $('#performanceMessage').textContent =
+      'Zapisano. Zmiana liczby wątków może chwilowo wstrzymać OCR.';
+    await refresh();
+  } catch (e) {
+    $('#performanceMessage').textContent = e.message;
+  } finally {
+    $('#performanceSave').disabled = false;
   }
 };

@@ -79,6 +79,8 @@ def test_workers_release_before_next_usb_and_keep_preview(monkeypatch):
         )
         for i in (1, 2)
     ]
+    for worker in workers:
+        worker.watch_preview(1)
     try:
         deadline = time.monotonic() + 3
         while len(opened) < 4 and time.monotonic() < deadline:
