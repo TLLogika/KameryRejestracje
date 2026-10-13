@@ -2,23 +2,17 @@
 
 Podstawowe uruchomienie opisuje [README](../README.md). Poniższe opcje nie są potrzebne do zwykłego działania parkingu.
 
-## Przełączanie USB na Linuxie
+## Przełączanie USB
 
-Gdy kontroler nie obsługuje dwóch strumieni równocześnie, można jawnie włączyć kolejny dostęp do USB:
+W zakładce **Ustawienia kamer** zaznacz „Pracuj naprzemiennie”. Odznaczenie przywraca równoczesne pobieranie obrazów. Ustawienie zapisuje się w SQLite i obejmuje bezpośrednie USB oraz mostek Windows; IP i kamery testowe pracują stale. Czas każdej kamery jest zapisany w jej ustawieniach. Nieaktywna kamera pokazuje ostatnią klatkę; OCR jej nie przelicza. Przerwy mogą powodować pominięcie przejazdu.
 
-```bash
-USB_ROTATION_SECONDS=5 ./docker.sh up -d --force-recreate --wait
-```
-
-Czas każdej kamery jest zapisany w jej ustawieniach. Nieaktywna kamera pokazuje ostatnią klatkę; OCR jej nie przelicza. Przerwy mogą powodować pominięcie przejazdu. Opcja dotyczy bezpośrednich urządzeń Linux, nie mostka Windows. Powrót do równoczesnego dostępu:
-
-```bash
-USB_ROTATION_SECONDS=0 ./docker.sh up -d --force-recreate --wait
-```
+`USB_ROTATION_SECONDS=5` lub `0` ustawia wyłącznie początkowy tryb, zanim administrator zapisze wybór w panelu. Zapisany checkbox ma pierwszeństwo.
 
 ## Nagrania demonstracyjne
 
-Są odseparowane od właściwej bazy i wymagają jawnego pliku Compose. Linux, Python 3 i FFmpeg:
+Najprościej użyj **Dodaj kamerę → Kamera testowa**. Dwa filmy Full HD / 60 FPS są już dołączone do projektu; nie wymagają dodatkowego profilu ani pobierania. [Źródło, autorzy i licencja](../app/demo/ATTRIBUTION.md).
+
+Starsza próba podmiany istniejących USB pozostaje opcjonalna i wymaga jawnego pliku Compose. Linux, Python 3 i FFmpeg:
 
 ```bash
 python3 scripts/prepare_test_videos.py
@@ -36,9 +30,9 @@ Wyniki wydajności na tych nagraniach dotyczą ustawionego obszaru drogi, a nie 
 
 ## Parametry kamer i diagnostyka
 
-Edytor → zaawansowane parametry: rzeczywista rozdzielczość, format, FPS, czas analizy, wiek klatki, wejście detektora i obszar próby. Rozdzielczość/FPS bezpośredniego USB są wybierane spośród trybów V4L2. Dla mostka Windows ustaw je w `windows-usb.ps1`; dla IP — w kamerze lub serwerze RTSP.
+Zakładka **Ustawienia kamer**: rzeczywista rozdzielczość, format, FPS, czas analizy, wiek klatki, wejście detektora i obszar próby. Rozdzielczość/FPS bezpośredniego USB są wybierane spośród trybów V4L2. Dla mostka Windows ustaw je w `windows-usb.ps1`; dla IP — w kamerze lub serwerze RTSP.
 
-Minimalna tura USB: 3 sekundy lub więcej zależnie od szybkości analizy; maksymalnie 120. To pomocnicze minimum, nie gwarancja odczytu. Stan serwera jest pod „Ustawienia zaawansowane”.
+Minimalna tura USB: 3 sekundy lub więcej zależnie od szybkości analizy; maksymalnie 120. To pomocnicze minimum, nie gwarancja odczytu. Stan serwera jest osobną rozwijaną pozycją na dole lewego menu.
 
 Podgląd jest skalowany całkowitym współczynnikiem do szerokości maksymalnie 1280 pikseli (z 1080p powstaje 960×540). OCR nadal korzysta z pełnej klatki. Pętla rozpoznawania nie analizuje drugi raz tej samej przechwyconej klatki.
 

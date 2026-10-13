@@ -1,0 +1,30 @@
+[
+  {
+    "id": "car-park",
+    "file": "car-park.mp4",
+    "label": "Car Park",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "analysis_roi": {
+      "x": 0,
+      "y": 0.39319499999999996,
+      "w": 0.563386,
+      "h": 0.3060640000000001
+    }
+  },
+  {
+    "id": "parking-garage",
+    "file": "parking-garage.mp4",
+    "label": "Parking Garage",
+    "width": 1920,
+    "height": 1080,
+    "fps": 60,
+    "analysis_roi": {
+      "x": 0,
+      "y": 0.35124999999999995,
+      "w": 0.7048960000000001,
+      "h": 0.64875
+    }
+  }
+]

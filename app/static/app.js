@@ -8,7 +8,8 @@ let csrf = '',
   pending = false,
   zoneSelection = 'new',
   zoneDraft = null;
-let currentView = location.hash === '#database' ? 'database' : 'cameras',
+let currentView = ['database', 'settings'].includes(location.hash.slice(1)) ? location.hash.slice(
+  1) : 'cameras',
   parkingData = null;
 async function api(path, options = {}) {
   const r = await fetch('/api' + path, {
@@ -134,7 +135,7 @@ function renderZoneSelect() {
 }
 
 function render() {
-  if (currentView === 'database') return;
+  if (currentView !== 'cameras') return;
   const max = Math.max(1, Math.ceil(cameras.length / 4));
   page = Math.min(page, max - 1);
   $('#page').textContent = `${page+1} / ${max}`;
@@ -235,32 +236,98 @@ function closeStreams() {
 }
 
 function setView(view, changeHash = true) {
-  currentView = view === 'database' ? 'database' : 'cameras';
-  const database = currentView === 'database';
-  if (database) closeStreams();
-  $('#cameraToolbar').hidden = database;
-  $('#grid').hidden = database;
-  $('#addOpen').hidden = database;
+  currentView = ['database', 'settings'].includes(view) ? view : 'cameras';
+  const database = currentView === 'database',
+    settings = currentView === 'settings';
+  if (currentView !== 'cameras') closeStreams();
+  if (settings) editing = null;
+  $('#cameraToolbar').hidden = currentView !== 'cameras';
+  $('#grid').hidden = currentView !== 'cameras';
   $('#databaseTools').hidden = !database;
+  $('#cameraPreferences').hidden = !settings;
+  $('.parking').hidden = settings;
   $('#dashboard main').classList.toggle('databaseOnly', database);
-  $('#viewTitle').textContent = database ? 'Baza danych parkingu' : 'Kamery i parking';
-  $('#viewEyebrow').textContent = database ? 'REJESTRACJE I ZDARZENIA' : 'PODGLĄD NA ŻYWO';
-  $('#camerasView').setAttribute('aria-pressed', String(!database));
-  $('#databaseView').setAttribute('aria-pressed', String(database));
-  if (changeHash) history.replaceState(null, '', database ? '#database' : '#cameras');
+  $('#viewTitle').textContent = settings ? 'Ustawienia kamer' : database ? 'Baza danych parkingu' :
+    'Kamery i parking';
+  $('#viewEyebrow').textContent = settings ? 'PRZEŁĄCZANIE I PARAMETRY' : database ?
+    'REJESTRACJE I ZDARZENIA' : 'PODGLĄD NA ŻYWO';
+  for (const name of ['cameras', 'database', 'settings']) $('#' + name + 'View').setAttribute(
+    'aria-pressed', String(currentView === name));
+  if (changeHash) history.replaceState(null, '', '#' + currentView);
   if (parkingData) rows(parkingData);
   if (csrf) {
     render();
-    refresh()
+    refresh();
+    if (settings) api('/camera-switching').then(data => {
+      $('#rotationEnabled').checked = data.enabled;
+    }).catch(e => $('#rotationMessage').textContent = e.message);
   }
 }
 $('#camerasView').onclick = () => setView('cameras');
 $('#databaseView').onclick = () => setView('database');
+$('#settingsView').onclick = () => setView('settings');
+$('#rotationEnabled').onchange = async () => {
+  const el = $('#rotationEnabled'),
+    desired = el.checked;
+  el.disabled = true;
+  $('#rotationMessage').textContent = 'Zmiana trybu pracy…';
+  try {
+    const data = await api('/camera-switching', {
+      method: 'PUT',
+      body: JSON.stringify({
+        enabled: desired
+      })
+    });
+    el.checked = data.enabled;
+    $('#rotationMessage').textContent = data.enabled ? 'Włączono pracę naprzemienną USB.' :
+      'Kamery pracują równocześnie.';
+    await refresh();
+    const c = cameras.find(c => c.id === editing);
+    if (c) await loadCameraSettings(c);
+  } catch (e) {
+    el.checked = !desired;
+    $('#rotationMessage').textContent = e.message;
+  } finally {
+    el.disabled = false;
+  }
+};
+
+function renderCameraPreferences() {
+  if (currentView !== 'settings') return;
+  const selector = $('#settingsCamera'),
+    previous = selector.value;
+  selector.replaceChildren();
+  for (const c of cameras) {
+    const option = document.createElement('option');
+    option.value = c.id;
+    option.textContent = c.name;
+    selector.append(option);
+  }
+  if (cameras.some(c => String(c.id) === previous)) selector.value = previous;
+  const c = cameras.find(c => String(c.id) === selector.value);
+  $('#cameraParameters').hidden = !c;
+  $('#noSettingsCamera').hidden = Boolean(c);
+  if (!c) {
+    editing = null;
+    return;
+  }
+  if (editing !== c.id) {
+    editing = c.id;
+    loadCameraSettings(c);
+  }
+  renderCameraMetrics(c);
+}
+$('#settingsCamera').onchange = () => {
+  const c = cameras.find(c => String(c.id) === $('#settingsCamera').value);
+  if (!c) return;
+  editing = c.id;
+  renderCameraMetrics(c);
+  loadCameraSettings(c);
+};
 $('#plateFilter').oninput = () => {
   if (parkingData) rows(parkingData)
 };
-window.addEventListener('hashchange', () => setView(location.hash === '#database' ? 'database' :
-  'cameras', false));
+window.addEventListener('hashchange', () => setView(location.hash.slice(1), false));
 
 function stats(data) {
   $('#databaseSource').textContent = data.test_mode ? 'Baza testowa' : 'Baza parkingu';
@@ -310,6 +377,7 @@ async function refresh() {
     const [cs, ps, ss] = await Promise.all([api('/cameras'), api('/parking'), api('/server')]);
     cameras = cs;
     render();
+    renderCameraPreferences();
     updateEditorState();
     rows(ps);
     stats(ss);
@@ -333,7 +401,8 @@ async function refreshUsbDevices() {
   const available = devices.filter(d => d.available !== false);
   if (available.length) $('#usbSource').value = available[0].source;
   $('#cameraAddSubmit').disabled = $('#kind').value === 'usb' && !available.length;
-  $('#cameraError').textContent = available.length ? '' : devices.length ?
+  $('#cameraError').textContent = $('#kind').value !== 'usb' || available.length ? '' : devices
+    .length ?
     'Urządzenia są widoczne, ale niedostępne. Sprawdź uprawnienia.' :
     'Brak kamer USB dostępnych dla serwera. Na Windowsie uruchom mostek USB i panel z opcją UsbBridge.'
 }
@@ -352,6 +421,8 @@ $('#addClose').onclick = () => $('#addDialog').close();
 $('#kind').onchange = () => {
   $('#usbLabel').hidden = $('#kind').value !== 'usb';
   $('#ipLabel').hidden = $('#kind').value !== 'ip';
+  $('#testLabel').hidden = $('#kind').value !== 'test';
+  $('#cameraError').textContent = '';
   $('#refreshUsb').hidden = $('#kind').value !== 'usb';
   $('#cameraAddSubmit').disabled = $('#kind').value === 'usb' && ![...$('#usbSource').options]
     .some(o => !o.disabled)
@@ -366,7 +437,8 @@ $('#cameraForm').onsubmit = async e => {
       body: JSON.stringify({
         name: f.get('name'),
         kind,
-        source: kind === 'usb' ? $('#usbSource').value : $('#ipSource').value
+        source: kind === 'usb' ? $('#usbSource').value : kind === 'test' ? $(
+          '#testSource').value : $('#ipSource').value
       })
     });
     $('#ipSource').value = '';
@@ -379,6 +451,7 @@ $('#cameraForm').onsubmit = async e => {
 let editorModes = [];
 
 function updateEditorState() {
+  if (!$('#editor').open) return;
   const c = cameras.find(c => c.id === editing);
   if (!c) return;
   const el = $('#editorState');
@@ -396,13 +469,13 @@ function openEditor(id) {
   zoneDraft = null;
   start = null;
   $('#editorName').textContent = c.name;
-  updateEditorState();
   $('#editorImage').src = `/api/cameras/${id}/stream`;
   $('#zoneError').textContent = '';
   $('#editor').showModal();
+  updateEditorState();
   renderZoneSelect();
-  loadCameraSettings(c)
 }
+
 $('#editorClose').onclick = () => {
   $('#editor').close();
   $('#editorImage').removeAttribute('src')
@@ -506,7 +579,7 @@ function renderCameraMetrics(c) {
   const m = c.metrics || {},
     value = (v, suffix = '') => v === null || v === undefined ? 'Zbieram pomiar' : `${v}${suffix}`;
   const resolution = m.resolution ? `${m.resolution.width} × ${m.resolution.height}` :
-  'Brak klatki';
+    'Brak klatki';
   const rows = [
     ['Rzeczywista rozdzielczość', resolution],
     ['Obszar analizy', m.analysis_roi ?
@@ -550,7 +623,8 @@ function renderCameraMetrics(c) {
       note.textContent = detail;
       box.append(note)
     }
-    $(basic.has(label) ? '#cameraMetrics' : '#extraCameraMetrics').append(box)
+    $('#extraCameraMetrics').append(box);
+    if (basic.has(label)) $('#cameraMetrics').append(box.cloneNode(true));
   }
   if (c.kind === 'usb' && m.rotation_enabled) {
     const minimum = m.minimum_seconds || 3;
@@ -584,7 +658,7 @@ async function loadCameraSettings(c) {
   $('#settingsSave').disabled = c.kind !== 'usb';
   if (c.kind === 'test') {
     $('#settingsHint').textContent =
-      'Nagranie testowe odtwarzane w pętli. Odczyty zapisują zdarzenia w osobnej bazie testowej. Integracja korzysta z właściwej bazy parkingu. Parametry USB będą dostępne po wyłączeniu testu.';
+      'Nagranie testowe odtwarzane w pętli. Odczyty zapisują zdarzenia w osobnej bazie testowej. Integracja korzysta z właściwej bazy parkingu. Parametry nagrania są stałe.';
     return
   }
   if (c.kind !== 'usb') {
@@ -594,9 +668,9 @@ async function loadCameraSettings(c) {
   }
   try {
     const data = await api(`/cameras/${c.id}/capabilities`);
-    if (editing !== c.id || !$('#editor').open) return;
+    if (editing !== c.id) return;
     if (data.settings_supported === false) {
-      $('#settingsSave').disabled = true;
+      $('#settingsSave').disabled = !c.metrics?.rotation_enabled;
       $('#settingsHint').textContent =
         'Kamera USB Windows: rozdzielczość i FPS ustaw podczas uruchamiania mostka USB.';
       return
@@ -625,9 +699,9 @@ $('#videoMode').onchange = () => fillVideoFps(15);
 $('#cameraSettings').onsubmit = async e => {
   e.preventDefault();
   const id = editing;
-  const body = {
-    rotation_seconds: Number($('#rotationSeconds').value)
-  };
+  const body = {};
+  if (!$('#rotationSeconds').disabled) body.rotation_seconds = Number($('#rotationSeconds')
+    .value);
   const mode = editorModes[Number($('#videoMode').value)];
   if (mode) Object.assign(body, {
     width: mode.width,
@@ -642,7 +716,7 @@ $('#cameraSettings').onsubmit = async e => {
       body: JSON.stringify(body)
     });
     $('#settingsMessage').textContent =
-    'Zapisano. Kamera zastosuje parametry od kolejnej tury.';
+      'Zapisano. Kamera ponownie otworzy strumień z nowymi parametrami.';
     await refresh()
   } catch (e) {
     $('#settingsMessage').textContent = e.message

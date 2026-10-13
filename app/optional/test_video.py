@@ -33,3 +33,24 @@ def load_test_sources(config_file):
                 raise ValueError("Nieprawidłowy obszar analizy nagrania")
             result[int(camera_id)]["analysis_roi"] = roi
     return result
+
+
+DEMO_ROOT = Path(__file__).resolve().parent.parent / "demo"
+
+
+def demo_catalog():
+    return json.loads((DEMO_ROOT / "catalog.json").read_text())
+
+
+def demo_source(source):
+    for item in demo_catalog():
+        if item["id"] == source:
+            path = DEMO_ROOT / item["file"]
+            if not path.is_file():
+                raise ValueError("Brakuje nagrania testowego w projekcie")
+            return {
+                "source": str(path),
+                "label": item["label"],
+                "analysis_roi": item["analysis_roi"],
+            }
+    raise ValueError("Wybierz jedno z nagrań testowych")

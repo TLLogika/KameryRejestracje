@@ -37,6 +37,9 @@
   </section>
   <div hidden="" id="dashboard">
    <aside>
+    <button class="primary" id="addOpen">
+     ＋ Dodaj kamerę
+    </button>
     <div class="brand">
      ◉ PARKING
     </div>
@@ -50,21 +53,16 @@
      <button aria-pressed="false" class="navLink" id="databaseView">
       ▤ Baza danych
      </button>
+     <button aria-pressed="false" class="navLink" id="settingsView">
+      ⚙ Ustawienia kamer
+     </button>
     </nav>
-    <button class="primary" id="addOpen">
-     ＋ Dodaj kamerę
-    </button>
-    <details id="advancedSettings">
-     <summary>
-      Ustawienia zaawansowane
+    <details class="serverNav" id="machine">
+     <summary class="navLink">
+      ▧ Stan serwera
      </summary>
-     <details id="machine">
-      <summary>
-       Stan serwera
-      </summary>
-      <div id="stats">
-      </div>
-     </details>
+     <div id="stats">
+     </div>
     </details>
     <div class="asideBottom">
      <span>
@@ -88,6 +86,64 @@
      <span class="pill" id="ocrState">
      </span>
     </header>
+    <section hidden="" id="cameraPreferences">
+     <article class="settingsCard">
+      <h2>
+       Przełączanie kamer USB
+      </h2>
+      <label class="checkboxLabel">
+       <input id="rotationEnabled" type="checkbox"/>
+       Pracuj naprzemiennie
+      </label>
+      <p class="muted">
+       Po odznaczeniu wszystkie kamery pracują równocześnie. Po zaznaczeniu kamery USB pracują kolejno przez ustawiony czas. Kamery IP i testowe pracują równocześnie.
+      </p>
+      <p id="rotationMessage" role="status">
+      </p>
+     </article>
+     <article class="settingsCard">
+      <label>
+       Wybierz kamerę
+       <select id="settingsCamera">
+       </select>
+      </label>
+      <p class="muted" id="noSettingsCamera">
+       Dodaj kamerę, aby zobaczyć jej właściwości.
+      </p>
+      <section id="cameraParameters">
+       <h2>
+        Właściwości i parametry kamery
+       </h2>
+       <div class="cameraMetrics" id="extraCameraMetrics">
+       </div>
+       <form id="cameraSettings">
+        <div class="settingsFields">
+         <label>
+          Czas jednej tury USB (sekundy)
+          <input id="rotationSeconds" max="120" min="3" required="" step="1" type="number"/>
+         </label>
+         <label>
+          Rozdzielczość i format
+          <select id="videoMode">
+          </select>
+         </label>
+         <label>
+          FPS kamery
+          <select id="videoFps">
+          </select>
+         </label>
+        </div>
+        <p id="settingsHint">
+        </p>
+        <button class="primary" id="settingsSave">
+         Zapisz ustawienia kamery
+        </button>
+        <p id="settingsMessage" role="status">
+        </p>
+       </form>
+      </section>
+     </article>
+    </section>
     <div class="toolbar" id="cameraToolbar">
      <span id="cameraCount">
      </span>
@@ -169,6 +225,9 @@
       <option value="usb">
        USB podłączone do maszyny
       </option>
+      <option value="test">
+       Kamera testowa
+      </option>
       <option value="ip">
        Kamera IP
       </option>
@@ -185,6 +244,17 @@
     <label hidden="" id="ipLabel">
      Adres strumienia
      <input id="ipSource" placeholder="rtsp://camera.example.invalid:554/stream"/>
+    </label>
+    <label hidden="" id="testLabel">
+     Nagranie testowe
+     <select id="testSource">
+      <option value="car-park">
+       Car Park · Full HD · 60 FPS
+      </option>
+      <option value="parking-garage">
+       Parking Garage · Full HD · 60 FPS
+      </option>
+     </select>
     </label>
     <p class="muted">
      Dodawanie urządzeń dotyczy serwera, na którym działa panel.
@@ -213,38 +283,6 @@
    </header>
    <div class="cameraMetrics" id="cameraMetrics">
    </div>
-   <details id="cameraParameters">
-    <summary>
-     Zaawansowane parametry kamery
-    </summary>
-    <div class="cameraMetrics" id="extraCameraMetrics">
-    </div>
-    <form id="cameraSettings">
-     <div class="settingsFields">
-      <label>
-       Czas jednej tury USB (sekundy)
-       <input id="rotationSeconds" max="120" min="3" required="" step="1" type="number"/>
-      </label>
-      <label>
-       Rozdzielczość i format
-       <select id="videoMode">
-       </select>
-      </label>
-      <label>
-       FPS kamery
-       <select id="videoFps">
-       </select>
-      </label>
-     </div>
-     <p id="settingsHint">
-     </p>
-     <button class="primary" id="settingsSave">
-      Zapisz ustawienia kamery
-     </button>
-     <p id="settingsMessage" role="status">
-     </p>
-    </form>
-   </details>
    <div class="stage" id="editorStage">
     <img alt="Obraz kamery" id="editorImage"/>
     <canvas id="editorCanvas">

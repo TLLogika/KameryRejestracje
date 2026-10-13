@@ -18,6 +18,7 @@ import psutil
 from fastapi import FastAPI, HTTPException, Request, Response, Depends
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from .optional.test_video import demo_catalog, demo_source
 from .integration import machine_auth
 from .store import Store
 from .cameras import Manager, usb_devices
@@ -161,6 +162,11 @@ def add_camera(body: CameraInput):
         url = urlparse(body.source)
         if url.scheme not in {"rtsp", "rtsps", "http", "https"} or not url.hostname:
             raise HTTPException(400, "Podaj adres RTSP lub HTTP kamery")
+    elif body.kind == "test":
+        try:
+            demo_source(body.source)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
     else:
         raise HTTPException(400, "Nieprawidłowy typ kamery")
     try:
@@ -205,14 +211,19 @@ def camera_settings(camera_id: int, body: CameraSettingsInput):
         raise HTTPException(404, "Nie ma takiej kamery")
     if getattr(worker, "test_video", None):
         raise HTTPException(400, "Wyłącz nagranie testowe, aby zmienić parametry USB")
-    if worker.config["source"].startswith("bridge:"):
+    if worker.config["source"].startswith("bridge:") and any(
+        key != "rotation_seconds" for key in body.model_dump(exclude_none=True)
+    ):
         raise HTTPException(400, "Parametry USB Windows ustaw w mostku na komputerze Windows")
     if worker.config["kind"] != "usb":
         raise HTTPException(400, "Parametry strumienia IP zmień w kamerze lub serwerze RTSP")
     current = DEFAULT_SETTINGS | worker.config.get("settings", {})
     settings = current | body.model_dump(exclude_none=True)
     minimum = worker.minimum_seconds()
-    if settings["rotation_seconds"] < minimum:
+    if (
+        body.rotation_seconds is not None
+        or getattr(app.state.manager, "usb_rotation_seconds", 0) > 0
+    ) and settings["rotation_seconds"] < minimum:
         raise HTTPException(
             400, f"Minimalna tura przy obecnej szybkości analizy wynosi {minimum} s"
         )
@@ -285,11 +296,20 @@ async def stream(camera_id: int, request: Request, token=Depends(auth)):
 
     async def frames():
         previous = -1
-        while not worker.stop.is_set() and sessions.get(token, 0) > time.time():
+        current = worker
+        while sessions.get(token, 0) > time.time():
             if await request.is_disconnected():
                 return
-            with worker.lock:
-                jpeg, sequence = worker.jpeg, worker.sequence
+            next_worker = app.state.manager.workers.get(camera_id)
+            if next_worker is None:
+                if camera_id not in {c["id"] for c in store.cameras()}:
+                    return
+                await asyncio.sleep(0.05)
+                continue
+            if current is not next_worker:
+                current, previous = next_worker, -1
+            with current.lock:
+                jpeg, sequence = current.jpeg, current.sequence
             if jpeg and sequence != previous:
                 previous = sequence
                 yield b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
@@ -317,9 +337,7 @@ def machine_events(after_id: int = 0):
 
 @app.get("/api/integration/parking", dependencies=[Depends(machine_auth)])
 def machine_parking():
-    return (
-        app.state.manager.parking_store() if hasattr(app.state.manager, "parking_store") else store
-    ).parking()
+    return store.parking()
 
 
 process = psutil.Process()
@@ -361,3 +379,28 @@ def asset(filename: str):
     if filename not in {"app.js", "style.css"}:
         raise HTTPException(404)
     return FileResponse(ROOT / "app/static" / filename)
+
+
+@app.get("/api/test-videos", dependencies=[Depends(auth)])
+def test_videos():
+    return [
+        {k: item[k] for k in ("id", "label", "width", "height", "fps")} for item in demo_catalog()
+    ]
+
+
+class RotationInput(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/camera-switching", dependencies=[Depends(auth)])
+def camera_switching():
+    return {"enabled": app.state.manager.usb_rotation_seconds > 0}
+
+
+@app.put("/api/camera-switching", dependencies=[Depends(auth)])
+def update_camera_switching(body: RotationInput):
+    try:
+        app.state.manager.set_rotation(body.enabled)
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc))
+    return {"enabled": app.state.manager.usb_rotation_seconds > 0}

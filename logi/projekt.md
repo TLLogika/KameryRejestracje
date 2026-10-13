@@ -84,3 +84,11 @@ Podstawowy panel obejmuje kamery USB/IP, wiele obszarów, potwierdzenie OCR w tr
 Dodano launcher PowerShell tworzący katalogi i klucz oraz przenośną obsługę uprawnień bind mountów. Klucz integracji pozostaje tylko do odczytu. Opcjonalny mostek Windows udostępnia fizyczne USB kontenerowi przez uwierzytelniony MJPEG; klucz jest w nagłówku, a nie w URL.
 
 Weryfikacja: 34 testy automatyczne, wykonanie launchera w PowerShell z atrapą Dockera, zbudowanie obrazu oraz odizolowany test kontenera z dwoma strumieniami mostka, logowaniem, SQLite, obszarami, przeglądarką i trwałością po restarcie. Test przenośnych uprawnień obejmował klucz zamontowany tylko do odczytu. Fizyczne urządzenia i sterowniki USB na Windowsie wymagają sprawdzenia na komputerze Windows; próba mostka używała syntetycznych klatek. Usługi na portach 8080 i 9000 pozostawiono działające, parking na 10000 wyłączony.
+
+## 2026-10-13 — zakładka ustawień i dołączone kamery testowe
+
+Dodano „Ustawienia kamer” pod bazą danych: właściwości, tryby USB, indywidualne czasy tur oraz trwały checkbox pracy naprzemiennej. Odznaczenie uruchamia równoczesne pobieranie. Zmiana trybu zwalnia stare strumienie USB przed ich ponownym otwarciem, działa również z mostkiem Windows i nie restartuje kamer IP/testowych. Podgląd HTTP odnajduje nowego pracownika po zmianie trybu. Minimalny czas tury jest dostosowany do bieżących pomiarów analizy.
+
+Przycisk dodawania jest na górze menu. Stan serwera jest osobną rozwijaną pozycją na dole, z mniejszą czcionką metryk. W dodawaniu dostępny jest typ „Kamera testowa” z wyborem Car Park lub Parking Garage. Do repozytorium i obrazu dołączono licencjonowane kopie UVG-VCM: 1920×1080/60 FPS, 40 s oraz 19 s, łącznie około 29 MB. Car Park spowolniono 4×, powtarzając klatki. Wyniki pozostają w bazie testowej; integracja eksportuje wyłącznie prawdziwy parking.
+
+Weryfikacja: 37 testów automatycznych, pełne dekodowanie obu filmów bez błędów, weryfikacja parametrów FFprobe, zbudowany Docker oraz odizolowana próba przeglądarką z dwoma różnymi nagraniami. Potwierdzono dodawanie bez USB, checkbox i jego trwałość po restarcie, brak strumieni w ustawieniach/bazie, pomiary Full HD/60 FPS, rozwijany serwer, układ mobilny i brak błędów JavaScript. Produkcyjnego parkingu na 10000 nie uruchamiano.

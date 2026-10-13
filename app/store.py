@@ -22,6 +22,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS cameras(id INTEGER PRIMARY KEY,name TEXT,kind TEXT,source TEXT,zones TEXT);
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,plate TEXT,action TEXT,camera_id INTEGER,confidence REAL,at TEXT);
         CREATE TABLE IF NOT EXISTS parking(plate TEXT PRIMARY KEY,entered_at TEXT,camera_id INTEGER);
+        CREATE TABLE IF NOT EXISTS preferences(key TEXT PRIMARY KEY,value TEXT NOT NULL);
         """
         )
         if "settings" not in {r[1] for r in self.db.execute("PRAGMA table_info(cameras)")}:
@@ -107,3 +108,14 @@ class Store:
                     "SELECT * FROM events WHERE id>? ORDER BY id LIMIT 1000", (after,)
                 )
             ]
+
+    def preference(self, key, default=None):
+        with self.lock:
+            row = self.db.execute("SELECT value FROM preferences WHERE key=?", (key,)).fetchone()
+            return json.loads(row[0]) if row else default
+
+    def set_preference(self, key, value):
+        with self.lock, self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO preferences VALUES(?,?)", (key, json.dumps(value))
+            )

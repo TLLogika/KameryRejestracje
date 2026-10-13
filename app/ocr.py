@@ -44,7 +44,7 @@ def recognize(manager):
                 detector_providers=["CPUExecutionProvider"],
                 detector_sess_options=options,
             )
-            if manager.test_sources
+            if manager.test_store
             else alpr
         )
         manager.ocr_status = "Działa"

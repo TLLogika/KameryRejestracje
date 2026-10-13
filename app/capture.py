@@ -113,8 +113,7 @@ class Worker:
                     "recommended_seconds": max(5, minimum),
                     "rotation_enabled": self.config["kind"] == "usb"
                     and self.manager.usb_rotation_seconds > 0
-                    and not getattr(self, "test_video", None)
-                    and not self.config.get("source", "").startswith("bridge:"),
+                    and not getattr(self, "test_video", None),
                 },
             }
 
@@ -125,7 +124,6 @@ class Worker:
                 self.config["kind"] == "usb"
                 and self.manager.usb_rotation_seconds > 0
                 and not self.test_video
-                and not self.config["source"].startswith("bridge:")
             )
             if rotating:
                 self.status = "Wstrzymana — ostatnia klatka" if self.jpeg else "Czeka na turę USB"

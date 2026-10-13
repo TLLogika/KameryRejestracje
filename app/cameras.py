@@ -10,7 +10,7 @@ from .optional.usb_rotation import UsbTurns
 from .ocr import recognize
 from .recognition import Consensus
 from .store import Store
-from .optional.test_video import load_test_sources
+from .optional.test_video import load_test_sources, demo_source
 
 
 class Manager:
@@ -23,11 +23,13 @@ class Manager:
         if not 0 <= self.usb_rotation_seconds <= 60:
             raise ValueError("USB_ROTATION_SECONDS musi być w zakresie 0–60")
         self.test_sources = load_test_sources(os.environ.get("TEST_CAMERA_SOURCES_FILE", ""))
-        self.test_store = (
-            Store(Path(__file__).resolve().parent.parent / "data/test-parking.sqlite3")
-            if self.test_sources
-            else None
+        self.test_store = Store(
+            Path(__file__).resolve().parent.parent / "data/test-parking.sqlite3"
         )
+        if store.preference("usb_rotation_enabled", self.usb_rotation_seconds > 0):
+            self.usb_rotation_seconds = 5
+        else:
+            self.usb_rotation_seconds = 0
         self.usb_turns = UsbTurns()
         self.ocr_status = "Ładowanie modeli"
         self.config_lock = threading.RLock()
@@ -47,6 +49,8 @@ class Manager:
                 worker.stop.set()
                 worker.thread.join(timeout=7)
         for key, config in configs.items():
+            if config["kind"] == "test":
+                self.test_sources[key] = demo_source(config["source"])
             if key in self.workers:
                 worker = self.workers[key]
                 with worker.lock:
@@ -78,3 +82,34 @@ class Manager:
         for worker in list(self.workers.values()):
             worker.thread.join(timeout=7)
         self.thread.join(timeout=10)
+
+    def set_rotation(self, enabled):
+        with self.config_lock:
+            if enabled == (self.usb_rotation_seconds > 0):
+                self.store.set_preference("usb_rotation_enabled", enabled)
+                return
+            workers = [
+                w for w in self.workers.values() if w.config["kind"] == "usb" and not w.test_video
+            ]
+            if enabled:
+                for worker in workers:
+                    minimum = worker.minimum_seconds()
+                    if minimum > 120:
+                        raise RuntimeError("Analiza jest zbyt wolna dla tury do 120 sekund")
+                    settings = worker.config["settings"]
+                    if settings["rotation_seconds"] < minimum:
+                        self.store.settings(
+                            worker.config["id"], settings | {"rotation_seconds": minimum}
+                        )
+            for worker in workers:
+                worker.stop.set()
+            for worker in workers:
+                worker.thread.join(timeout=7)
+            if any(worker.thread.is_alive() for worker in workers):
+                raise RuntimeError("Kamera nie zwolniła strumienia. Spróbuj ponownie.")
+            for worker in workers:
+                self.workers.pop(worker.config["id"])
+            self.usb_turns = UsbTurns()
+            self.usb_rotation_seconds = 5 if enabled else 0
+            self.store.set_preference("usb_rotation_enabled", enabled)
+            self._reload()

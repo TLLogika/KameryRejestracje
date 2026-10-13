@@ -77,9 +77,11 @@ Lista kamer filtruje węzły metadanych, odróżnia urządzenia fizyczne i prefe
 2. W **Kamery → Powiększ / obszary** narysuj zielone obszary wjazdu oraz czerwone wyjazdu i zapisz. Można dodać po 32 obszary każdego koloru. Przeciwne kolory nie mogą się nakładać.
 3. Środek tablicy wyznacza obszar. Odczyt wymaga co najmniej trzech zgodnych głosów z różnych przechwyconych klatek, pewności OCR ≥80% i co najmniej 60% zgodnych głosów w oknie do 12 sekund. Powtórzone zdarzenia nie duplikują stanu parkingu.
 4. **Baza danych** pokazuje aktualny parking oraz ostatnie 100 wjazdów i 100 wyjazdów. Można wyszukiwać rejestracje. Ten widok zamyka podglądy w przeglądarce; OCR działa dalej. Adres z `#database` otwiera bezpośrednio bazę.
-5. W edytorze są tylko podstawowe pomiary. Pozostałe pomiary i parametry USB oraz stan serwera znajdują się w rozwijanych ustawieniach zaawansowanych.
+5. **Ustawienia kamer**, pod bazą danych, zawierają przełącznik pracy naprzemiennej USB, wybór kamery, właściwości i parametry obrazu. Checkbox odznaczony: równoczesne pobieranie wszystkich kamer; zaznaczony: kamery USB kolejno, z osobnymi czasami tur. Ustawienie jest trwałe i działa także z mostkiem Windows. Rozdzielczość i FPS USB Windows ustawiasz w mostku. Kamery IP i testowe pracują równocześnie.
+6. **Dodaj kamerę → Kamera testowa** pozwala wybrać Car Park lub Parking Garage. Oba nagrania Full HD / 60 FPS są częścią repozytorium i obrazu Docker. Car Park trwa około 40 s (spowolnienie 4× z powtórzeniem klatek), Parking Garage około 19 s. Pliki odtwarzają się w pętli; odczyty trafiają do osobnej bazy testowej. Przy samych kamerach testowych widok bazy pokazuje bazę testową; przy mieszanych kamerach pokazuje właściwy parking. Integracja zawsze czyta właściwą bazę.
+7. **Stan serwera** jest rozwijany na dole lewego menu.
 
-Kamery domyślnie działają równocześnie. **Tryb demonstracyjny i przełączanie USB są domyślnie wyłączone**, także gdy w katalogu znajdują się stare nagrania lub pliki próby.
+Kamery domyślnie działają równocześnie. **Podmiana starych kamer na nagrania i przełączanie USB są domyślnie wyłączone**, także gdy w katalogu znajdują się stare nagrania lub pliki próby.
 
 ## Dane i budowa programu
 
@@ -90,6 +92,6 @@ Kamery domyślnie działają równocześnie. **Tryb demonstracyjny i przełącza
 
 Kontener działa bez `privileged`, z obrazem tylko do odczytu i trwałymi katalogami. Na Linuxie uprawnienia są sprawdzane ściśle; dla bind mountów Windows skrypt wybiera tryb przenośny, tolerujący tylko brak obsługi zmiany uprawnień. Błędy odczytu/zapisu nie są ukrywane. Dostęp do katalogu projektu na Windowsie regulują uprawnienia NTFS.
 
-Dane wdrożenia, klucze, hasła, nagrania i baza nie trafiają do repozytorium ani obrazu. Pierwszy start pobiera modele rozpoznawania; kolejne korzystają z cache. Skuteczność i szybkość odczytu trzeba sprawdzić na docelowych kamerach i oświetleniu.
+Dane wdrożenia, klucze, hasła, prywatne nagrania i baza nie trafiają do repozytorium ani obrazu. Publiczne nagrania testowe w `app/demo/` są dołączone na licencji [CC BY 4.0; źródło i autorzy](app/demo/ATTRIBUTION.md). Pierwszy start pobiera modele rozpoznawania; kolejne korzystają z cache. Skuteczność i szybkość odczytu trzeba sprawdzić na docelowych kamerach i oświetleniu.
 
 [Opcjonalne próby, integracja i zaawansowane ustawienia](docs/advanced.md).

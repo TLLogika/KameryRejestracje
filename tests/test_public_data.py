@@ -27,6 +27,10 @@ def test_public_files_do_not_expose_deployment_data():
         assert not re.search(
             r"\.(?:sqlite3?|log)(?:[.-]|$)", name
         ), f"Dane operacyjne w repozytorium: {name}"
+        if name in {"app/demo/car-park.mp4", "app/demo/parking-garage.mp4"}:
+            content_bytes = (ROOT / path).read_bytes()
+            assert content_bytes[4:8] == b"ftyp" and len(content_bytes) < 50_000_000
+            continue
         content = (ROOT / path).read_text()
         for candidate in IPV4.findall(content):
             try:

@@ -594,3 +594,66 @@ dialog::backdrop {
         grid-template-columns: minmax(0, 1fr)
     }
 }
+
+/* Navigation and camera preferences */
+aside {
+    display: flex;
+    flex-direction: column;
+}
+
+aside>.primary {
+    margin: 0 0 24px;
+}
+
+.serverNav {
+    margin-top: auto;
+    padding: 0;
+    border: 0;
+}
+
+.serverNav>summary {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.serverNav #stats {
+    padding: 12px 4px;
+    font-size: 12px;
+}
+
+.serverNav .metric strong {
+    font-size: 16px;
+}
+
+.serverNav .metric small {
+    font-size: 11px;
+}
+
+.settingsCard {
+    border: 1px solid var(--border);
+    background: var(--panel);
+    border-radius: 14px;
+    padding: 22px;
+    margin-bottom: 20px;
+}
+
+.checkboxLabel {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.checkboxLabel input {
+    width: auto;
+}
+
+#cameraParameters {
+    margin-top: 20px;
+}
+
+@media(max-width:760px) {
+    .serverNav {
+        margin-top: 18px;
+    }
+}

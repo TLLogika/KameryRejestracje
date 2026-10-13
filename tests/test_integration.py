@@ -16,6 +16,14 @@ def test_shared_key_read_only_export(tmp_path, monkeypatch):
         client.get("/api/integration/events", headers={"Authorization": "Bearer wrong"}).status_code
         == 401
     )
+    # Test-only panel data must never be exported as the real parking state.
+    from types import SimpleNamespace
+
+    test_store = Store(tmp_path / "test-db.sqlite3")
+    test_store.transition("TEST999", "arrival", 2, 0.99)
+    monkeypatch.setattr(
+        main.app.state, "manager", SimpleNamespace(parking_store=lambda: test_store), raising=False
+    )
     headers = {"Authorization": "Bearer " + KEY}
     result = client.get("/api/integration/events", headers=headers)
     assert result.status_code == 200
